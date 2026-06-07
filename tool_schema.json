@@ -1,0 +1,30 @@
+{
+  "functions": [
+    {
+      "name": "query_best_practice",
+      "description": "查询经过验证的编程最佳实践规则。将用户的问题或代码片段作为关键词，返回最匹配的规则供参考。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "搜索关键词，可以是问题描述、技术名称、代码模式或错误信息"
+          },
+          "search_type": {
+            "type": "string",
+            "enum": ["exact", "prefix", "tag"],
+            "default": "exact",
+            "description": "搜索类型：exact=精确标题匹配，prefix=关键词前缀匹配，tag=标签搜索"
+          },
+          "category": {
+            "type": "string",
+            "enum": ["philosophy", "pattern", "performance", "security", "all"],
+            "default": "all",
+            "description": "规则分类过滤"
+          }
+        },
+        "required": ["query"]
+      }
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+# 自适应规则进化系统 — 配置文件
+
+server:
+  host: "0.0.0.0"
+  port: 8000
+  workers: 4
+
+index:
+  hot_threshold: 10        # hit_count ≥ 此值进入热缓存
+  cold_days: 30            # 超过 N 天未访问进入冷区
+  rebuild_on_start: true
+
+evolution:
+  enabled: true
+  auto_apply: true
+  min_confidence: 0.3
+  batch_size: 10
+
+logging:
+  level: "INFO"
+  query_log_enabled: true
+  metrics_interval_sec: 300
+
+cache:
+  max_size_mb: 512
+  preheat_on_start: true
+
+security:
+  api_key_required: false
+  rate_limit_per_min: 1000
