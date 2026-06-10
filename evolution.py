@@ -183,6 +183,20 @@ class EvolutionEngine:
         """清空待处理队列。"""
         self._pending.clear()
 
+    # ── Phase 2: 免疫系统集成 ───────────────────────
+
+    def integrate_immune_system(self, immune_system):
+        """与免疫系统集成：自动将抗体转为进化任务。"""
+        for rule_id, antibodies in immune_system.b_cells.items():
+            rule = self.storage.get(rule_id)
+            if rule:
+                for antibody in antibodies[:1]:  # 取第一条建议
+                    self._pending.append((
+                        EvolutionType.CONTENT_REFINE,
+                        rule_id,
+                        {"hint": antibody},
+                    ))
+
     # ── 应用进化 ─────────────────────────────────────
 
     def dry_run(self) -> List[dict]:

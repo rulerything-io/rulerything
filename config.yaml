@@ -6,7 +6,7 @@ server:
   workers: 4
 
 index:
-  hot_threshold: 10        # hit_count ≥ 此值进入热缓存
+  hot_threshold: 3         # hit_count ≥ 此值进入热缓存（v2.0 优化：从 10 降至 3）
   cold_days: 30            # 超过 N 天未访问进入冷区
   rebuild_on_start: true
 
@@ -22,9 +22,47 @@ logging:
   metrics_interval_sec: 300
 
 cache:
+  # v1.0 缓存配置
   max_size_mb: 512
+  # Phase 3: 时间衰减缓存
+  enabled: true
+  max_size: 5000
+  decay_half_life: 3600
   preheat_on_start: true
+  preheat_threshold: 1.0
 
 security:
   api_key_required: false
   rate_limit_per_min: 1000
+
+# Phase 1: 熵引擎
+entropy:
+  enabled: true
+  cache_hit_rate_min: 0.6
+  avg_latency_max_ms: 20
+  conflict_count_max: 100
+  low_quality_ratio_max: 0.3
+  preheat_accuracy_min: 0.5
+  suggestion_cooldown_hours: 24
+  max_query_log: 10000
+
+# Phase 2: 规则免疫系统
+immune:
+  enabled: true
+  auto_scan_interval_hours: 24
+  auto_cleanup: false
+  # 5 维评分权重（可调）
+  weight_confidence: 0.3
+  weight_timeliness: 0.2
+  weight_conflict_free: 0.25
+  weight_usefulness: 0.15
+  weight_completeness: 0.1
+
+# Phase 3: 集成协调器
+adaptive_system:
+  enabled: true
+
+# Phase 3 插件：语义搜索（独立，零核心影响）
+semantic_search:
+  enabled: true
+  backend: bm25

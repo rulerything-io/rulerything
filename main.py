@@ -20,6 +20,9 @@ from storage import RuleStorage
 from index import EverythingStyleIndex
 from logger import RuleLogger
 from evolution import EvolutionEngine
+from entropy_engine import EntropyEngine  # Phase 1
+from immune_system import RuleImmuneSystem  # Phase 2
+from adaptive_system import AdaptiveRuleSystem  # Phase 3
 
 # ── 配置加载 ──────────────────────────────────────────
 
@@ -50,6 +53,20 @@ if config["cache"]["preheat_on_start"] and rules:
 
 # 进化引擎
 evolution = EvolutionEngine(storage, index, logger)
+
+# Phase 1: 熵引擎
+entropy_engine = EntropyEngine(config.get("entropy", {}))
+
+# Phase 2: 规则免疫系统（默认关闭）
+immune_system = None
+if config.get("immune", {}).get("enabled", False):
+    immune_system = RuleImmuneSystem(config.get("immune", {}))
+
+# Phase 3: AdaptiveRuleSystem（默认关闭）
+adaptive_system = None
+if config.get("adaptive_system", {}).get("enabled", False):
+    adaptive_system = AdaptiveRuleSystem(config, str(_BASE_DIR / "data"), rules)
+    logger.info("system", "AdaptiveRuleSystem 初始化完成", phase="3")
 
 _start_time = datetime.now()
 
@@ -171,6 +188,14 @@ async def search(req: SearchRequest):
         result_ids=[r.id for r in results],
         cache_hit=latency_ms < 1.0,
         user_feedback=req.user_feedback,
+    )
+
+    # 熵引擎记录查询（Phase 1）
+    entropy_engine.record_query(
+        query=req.query,
+        result_ids=[r.id for r in results],
+        latency_ms=latency_ms,
+        cache_hit=latency_ms < 1.0,
     )
 
     # 收集反馈（如果提供）
@@ -364,11 +389,236 @@ async def stats():
     }
 
 
+# ── Phase 2: 规则免疫系统 API ──────────────────────
+
+
+class ImmuneScanRequest(BaseModel):
+    auto_cleanup: bool = False
+
+
+class ImmuneClearRequest(BaseModel):
+    rule_ids: Optional[list] = None
+    all_nk_targets: bool = False
+
+
+@app.post("/immune/scan")
+async def immune_scan(req: ImmuneScanRequest):
+    """扫描所有规则的健康状态。"""
+    if not immune_system:
+        return {"status": "disabled", "message": "免疫系统未启用"}
+    rules = storage.list()
+    results = immune_system.batch_scan(rules, auto_cleanup=req.auto_cleanup)
+    return {
+        "healthy": len(results["healthy"]),
+        "weakened": len(results["weakened"]),
+        "infected": len(results["infected"]),
+        "dead": len(results["dead"]),
+        "nk_targets": list(immune_system.nk_targets),
+        "summary": immune_system.get_health_summary(),
+    }
+
+
+@app.post("/immune/clear")
+async def immune_clear(req: ImmuneClearRequest):
+    """NK 清除低质量规则。"""
+    if not immune_system:
+        return {"status": "disabled", "message": "免疫系统未启用"}
+    if req.all_nk_targets:
+        cleared = immune_system.nk_clear()
+    else:
+        cleared = immune_system.nk_clear(req.rule_ids)
+    # 从存储中物理删除
+    for rid in cleared:
+        storage.hard_delete(rid)
+    # 重建索引
+    index.build(storage.list())
+    return {"cleared": cleared}
+
+
+@app.get("/health/{rule_id}")
+async def rule_health(rule_id: str):
+    """查看单条规则的健康详情。"""
+    if not immune_system:
+        return {"status": "disabled", "message": "免疫系统未启用"}
+    rule = storage.get(rule_id)
+    if not rule:
+        return {"error": f"规则 {rule_id} 不存在"}
+    report = immune_system.evaluate_health(rule)
+    return {
+        "rule_id": report.rule_id,
+        "status": report.status.value,
+        "score": report.score,
+        "dimensions": report.dimensions,
+        "conflicts": report.conflicts,
+        "antibodies": report.antibodies,
+    }
+
+
 # ── AI 集成辅助 ────────────────────────────────────
 
 
+# ── Phase 1: 熵引擎 API ────────────────────────────
+
+
+class AckRequest(BaseModel):
+    type: str
+
+
+@app.get("/entropy/report")
+async def entropy_report():
+    """获取系统熵报告。"""
+    if not config.get("entropy", {}).get("enabled", True):
+        return {"status": "disabled"}
+    return entropy_engine.get_report()
+
+
+@app.get("/entropy/suggestions")
+async def entropy_suggestions():
+    """获取优化建议。"""
+    if not config.get("entropy", {}).get("enabled", True):
+        return {"suggestions": []}
+
+    # 收集当前指标（Phase 3 组件优先）
+    metrics = {
+        'cache_hit_rate': entropy_engine.get_report().get(
+            'cache_hit_rate', index.stats().get('cache_hit_rate', 0)
+        ),
+        'avg_query_latency_ms': entropy_engine.get_report().get('avg_latency_ms', 0),
+        'conflict_count': (
+            len(adaptive_system.immune_system.regulatory_t_cells)
+            if adaptive_system and adaptive_system.immune_system
+            else 0
+        ),
+        'low_quality_ratio': (
+            len(adaptive_system.immune_system.nk_targets) / max(1, len(adaptive_system.rules))
+            if adaptive_system and adaptive_system.immune_system
+            else 0
+        ),
+        'preheat_accuracy': 0,
+    }
+    suggestions = entropy_engine.suggest_optimizations(metrics)
+    return {
+        "suggestions": [
+            {"type": s.type, "target": s.target,
+             "description": s.description,
+             "estimated_cost": s.estimated_cost,
+             "predicted_improvement": s.predicted_improvement}
+            for s in suggestions
+        ],
+        "current_entropy": entropy_engine.get_report().get('estimated_system_entropy', 0),
+    }
+
+
+@app.post("/entropy/ack")
+async def entropy_ack(req: AckRequest):
+    """标记优化建议已执行。"""
+    from entropy_engine import OptimizationAction
+    action = OptimizationAction(type=req.type, target="")
+    entropy_engine.mark_executed(action)
+    return {"status": "acknowledged", "type": req.type}
+
+
+# ── Phase 3: AdaptiveRuleSystem API ──────────────────
+
+
+class QueryRequest(BaseModel):
+    query_text: str
+    sort_by: str = "title"
+    category: Optional[str] = None
+    use_semantic: bool = False
+    limit: int = 10
+
+
+@app.post("/query")
+async def phase3_query(req: QueryRequest):
+    """Phase 3 统一查询（EnhancedEverythingIndex + 语义插件）。"""
+    if not adaptive_system:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "AdaptiveRuleSystem 未启用"},
+        )
+    results = adaptive_system.query(
+        query_text=req.query_text,
+        sort_by=req.sort_by,
+        category=req.category,
+        use_semantic=req.use_semantic,
+        limit=req.limit,
+    )
+    return {
+        "results": [
+            {
+                "id": r.id, "title": r.title, "content": r.content,
+                "category": r.category, "tags": r.tags,
+                "confidence": r.confidence, "hit_count": r.hit_count,
+            }
+            for r in results
+        ],
+        "total": len(results),
+    }
+
+
+@app.get("/status")
+async def phase3_status():
+    """Phase 3 完整系统状态。"""
+    if not adaptive_system:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "AdaptiveRuleSystem 未启用"},
+        )
+    return adaptive_system.get_full_status()
+
+
+@app.get("/cache/stats")
+async def cache_stats():
+    """Phase 3 缓存统计。"""
+    if not adaptive_system or not adaptive_system.cache:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Phase 3 缓存未启用"},
+        )
+    cache = adaptive_system.cache
+    return {
+        "size": len(cache.cache),
+        "max_size": cache.max_size,
+        "heat_entries": len(cache.heat),
+        "threshold": cache.preheat_threshold,
+        "decay_half_life": cache.decay_half_life,
+    }
+
+
+@app.post("/index/incremental")
+async def index_incremental(req: AddRuleRequest):
+    """Phase 3 增量添加规则到增强索引（无需全量重建）。"""
+    if not adaptive_system:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "AdaptiveRuleSystem 未启用"},
+        )
+    from rule import Rule
+    rule = Rule(
+        id=req.id, title=req.title, content=req.content,
+        category=req.category, tags=req.tags,
+        confidence=req.confidence, verifier=req.verifier,
+    )
+    adaptive_system.index.add(rule)
+    adaptive_system.rules[rule.id] = rule
+    return {"ok": True, "rule_id": rule.id}
+
+
+@app.post("/optimize")
+async def phase3_optimize():
+    """Phase 3 熵驱动系统优化。"""
+    if not adaptive_system:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "AdaptiveRuleSystem 未启用"},
+        )
+    result = adaptive_system.optimize()
+    return result
+
+
 def enhance_prompt(user_input: str, max_rules: int = 5) -> str:
-    """将用户问题与相关规则结合，生成增强提示词。
+    """将用户问题与相关规则结合，生成增强提示词（v2.0，回退 v1.0）。
 
     用法：
         enhanced = enhance_prompt("如何在Python中高效处理百万条数据的循环？")
@@ -378,41 +628,48 @@ def enhance_prompt(user_input: str, max_rules: int = 5) -> str:
         #     {"role": "user", "content": user_input},
         # ])
     """
-    # 尝试不同搜索类型获取相关规则
-    all_results = []
-    for search_type in ("exact", "prefix", "tag"):
-        results = index.search(user_input, search_type, limit=3)
-        all_results.extend(results)
+    if adaptive_system:
+        # Phase 3: 语义+标题前缀混合查询
+        # sort_by="title" → 前缀查询按文本过滤，无匹配时不返回无关结果
+        results = adaptive_system.query(
+            query_text=user_input,
+            sort_by="title",
+            use_semantic=True,
+            limit=max_rules,
+        )
+    else:
+        # v1.0 回退：多策略关键词搜索
+        all_results = []
+        for search_type in ("exact", "prefix", "tag"):
+            results = index.search(user_input, search_type, limit=3)
+            all_results.extend(results)
 
-    # 提取输入中的英文关键词作为标签和搜索词（对中英文混合输入友好）
-    import re
-    keywords = re.findall(r'[a-zA-Z_+#.]+', user_input)
-    for kw in keywords:
-        kw_lower = kw.lower()
-        # 标签搜索
-        tag_results = index.search_by_tag(kw_lower, limit=3)
-        all_results.extend(tag_results)
-        # 前缀搜索英文关键词
-        prefix_results = index.search_prefix(kw_lower, limit=3)
-        all_results.extend(prefix_results)
+        import re
+        keywords = re.findall(r'[a-zA-Z_+#.]+', user_input)
+        for kw in keywords[:5]:
+            kw_lower = kw.lower()
+            tag_results = index.search_by_tag(kw_lower, limit=3)
+            all_results.extend(tag_results)
+            prefix_results = index.search_prefix(kw_lower, limit=3)
+            all_results.extend(prefix_results)
 
-    # 去重 + 按置信度排序
-    seen = set()
-    unique = []
-    for r in all_results:
-        if r.id not in seen:
-            seen.add(r.id)
-            unique.append(r)
-    unique.sort(key=lambda r: r.confidence, reverse=True)
+        seen = set()
+        unique = []
+        for r in all_results:
+            if r.id not in seen:
+                seen.add(r.id)
+                unique.append(r)
+        unique.sort(key=lambda r: r.confidence, reverse=True)
+        results = unique[:max_rules]
 
-    if not unique:
+    if not results:
         return user_input
 
     rules_text = "\n\n".join(
         f"规则 {i + 1}: [{r.id}] {r.title}\n"
-        f"分类: {r.category} | 置信度: {r.confidence}\n"
+        f"分类: {r.category} | 置信度: {r.confidence:.2f}\n"
         f"内容: {r.content}"
-        for i, r in enumerate(unique[:max_rules])
+        for i, r in enumerate(results[:max_rules])
     )
 
     return f"""你是一个具备专业知识的技术助手。以下是与当前问题相关的最佳实践规则，请优先参考这些规则来回答：

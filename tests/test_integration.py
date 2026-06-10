@@ -190,7 +190,7 @@ class TestEnhancePrompt:
     def test_python_query(self):
         prompt = enhance_prompt("Python big data processing")
         assert "\u89c4\u5219 1" in prompt or "Rule" in prompt
-        assert "performance/001" in prompt
+        assert "python/" in prompt  # v2.0 BM25 优先匹配 title 含 Python 的规则
 
     def test_prefix_query(self):
         prompt = enhance_prompt("use generator")

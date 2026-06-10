@@ -21,7 +21,7 @@ DEFAULTS: Dict[str, Dict[str, Any]] = {
         "workers": 4,
     },
     "index": {
-        "hot_threshold": 10,
+        "hot_threshold": 3,
         "cold_days": 30,
         "rebuild_on_start": True,
     },

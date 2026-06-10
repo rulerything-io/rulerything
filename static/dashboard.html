@@ -21,7 +21,11 @@ body { font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei",
 .main { flex: 1; padding: 24px 32px; overflow-y: auto; max-height: 100vh; }
 .page { display: none; }
 .page.active { display: block; }
-.page-title { font-size: 22px; margin-bottom: 20px; color: #2d3436; font-weight: 600; }
+.page-title { font-size: 22px; margin-bottom: 20px; color: #2d3436; font-weight: 600; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.auto-badge { font-size: 12px; font-weight: normal; color: #00b894; display: inline-flex; align-items: center; gap: 4px; }
+.auto-badge.paused { color: #b2bec3; }
+.auto-toggle { font-size: 12px; font-weight: normal; color: #636e72; cursor: pointer; margin-left: auto; display: flex; align-items: center; gap: 4px; }
+.auto-toggle:hover { color: #2d3436; }
 
 /* Cards */
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px; }
@@ -148,7 +152,7 @@ tr:last-child td { border-bottom: none; }
 <body>
 
 <div class="sidebar">
-  <h1><span>&#9670; 规则系统</span> <span class="ver">v1.0</span></h1>
+  <h1><span>&#9670; 规则系统</span> <span class="ver" id="sidebar-ver">v2.0</span></h1>
   <div class="nav-item active" data-page="overview"><span class="icon">&#9632;</span><span>概览</span></div>
   <div class="nav-item" data-page="rules"><span class="icon">&#9776;</span><span>规则列表</span></div>
   <div class="nav-item" data-page="search-page"><span class="icon">&#9906;</span><span>搜索</span></div>
@@ -164,7 +168,11 @@ tr:last-child td { border-bottom: none; }
 
 <!-- ===== 概览 ===== -->
 <div id="page-overview" class="page active">
-  <div class="page-title">概览</div>
+  <div class="page-title">
+    概览
+    <span class="auto-badge" id="ov-badge">● 自动刷新 10s</span>
+    <span class="auto-toggle" onclick="toggleAutoRefresh()" id="auto-toggle-btn">&#9635; 恢复</span>
+  </div>
   <div class="cards" id="overview-cards"></div>
 
   <div class="stat-row">
@@ -190,7 +198,10 @@ tr:last-child td { border-bottom: none; }
 
 <!-- ===== 规则列表 ===== -->
 <div id="page-rules" class="page">
-  <div class="page-title">规则列表</div>
+  <div class="page-title">
+    规则列表
+    <span class="auto-badge" id="rules-badge">● 自动刷新 30s</span>
+  </div>
   <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
     <select id="rule-cat-filter" style="padding:6px 12px;border:1px solid #dfe6e9;border-radius:6px;font-size:13px">
       <option value="all">全部分类</option>
@@ -224,7 +235,10 @@ tr:last-child td { border-bottom: none; }
 
 <!-- ===== 进化管理 ===== -->
 <div id="page-evolution" class="page">
-  <div class="page-title">进化管理</div>
+  <div class="page-title">
+    进化管理
+    <span class="auto-badge" id="evo-badge">● 自动刷新 15s</span>
+  </div>
 
   <div class="section-tabs">
     <button class="section-tab active" data-tab="evo-pending-tab">待处理</button>
@@ -711,8 +725,65 @@ async function restartServer() {
   }
 }
 
+// ── Auto Refresh System ──
+let autoRefreshEnabled = false;
+let autoRefreshTimers = {};
+const AUTO_REFRESH_CONFIG = {
+  overview: { interval: 10000, loadFn: loadOverview, badgeId: 'ov-badge' },
+  rules:    { interval: 30000, loadFn: () => loadRules(), badgeId: 'rules-badge' },
+  evolution:{ interval: 15000, loadFn: loadPending, badgeId: 'evo-badge' },
+};
+
+function startAutoRefresh() {
+  autoRefreshEnabled = true;
+  for (const [key, cfg] of Object.entries(AUTO_REFRESH_CONFIG)) {
+    if (autoRefreshTimers[key]) clearInterval(autoRefreshTimers[key]);
+    autoRefreshTimers[key] = setInterval(() => {
+      if (!autoRefreshEnabled) return;
+      cfg.loadFn();
+    }, cfg.interval);
+  }
+  document.getElementById('auto-toggle-btn').innerHTML = '&#9633; 暂停';
+  document.querySelectorAll('.auto-badge').forEach(el => {
+    el.classList.remove('paused');
+    el.style.opacity = '1';
+  });
+}
+
+function stopAutoRefresh() {
+  autoRefreshEnabled = false;
+  for (const key of Object.keys(autoRefreshTimers)) {
+    if (autoRefreshTimers[key]) clearInterval(autoRefreshTimers[key]);
+    autoRefreshTimers[key] = null;
+  }
+  document.getElementById('auto-toggle-btn').innerHTML = '&#9635; 恢复';
+  document.querySelectorAll('.auto-badge').forEach(el => {
+    el.classList.add('paused');
+    el.style.opacity = '0.5';
+  });
+}
+
+function toggleAutoRefresh() {
+  if (autoRefreshEnabled) {
+    stopAutoRefresh();
+  } else {
+    startAutoRefresh();
+  }
+}
+
 // ── Init ──
 (async function init() {
+  // Load version for sidebar
+  try {
+    const h = await api('GET', '/health');
+    document.getElementById('sidebar-ver').textContent = 'v2.0 (引擎 ' + (h.version || '1.0.1') + ')';
+  } catch(e) {}
+  // Apply paused style to badges (auto-refresh off by default)
+  document.querySelectorAll('.auto-badge').forEach(el => {
+    el.classList.add('paused');
+    el.style.opacity = '0.5';
+    el.textContent = '● 已暂停';
+  });
   await populateCatFilter();
   await loadOverview();
   await loadRules('all');
