@@ -366,6 +366,7 @@ class DeepSeekProvider(AIProvider):
     MODEL_COSTS = {
         "deepseek-chat": {"input": 0.14, "output": 0.28},
         "deepseek-reasoner": {"input": 0.55, "output": 1.19},
+        "deepseek-v4-flash": {"input": 0.20, "output": 0.40},
     }
 
     def __init__(self, config: dict):

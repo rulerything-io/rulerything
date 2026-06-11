@@ -88,12 +88,104 @@ class DraftGenerator:
         # 用低成本模型（haiku 或 equivalent）
         try:
             response = self._call_cheap_llm(prompt)
-        except RuntimeError:
-            # LLM 调用失败，返回全 None
-            return [None] * len(qa_pairs)
+        except (RuntimeError, NotImplementedError, AttributeError, TypeError):
+            # LLM 不可用（如 use_parent_ai 模式），降级为本地提取
+            return [self._local_extract(q, a) for q, a, _ in qa_pairs]
 
         drafts = self._parse_batch_response(response["content"], len(qa_pairs))
         return [self._validate(d) for d in drafts]
+
+    def _local_extract(self, query: str, response: str) -> Optional[dict]:
+        """无 LLM 时本地提取规则草稿（use_parent_ai 模式降级方案）。"""
+        resp = response.strip()
+        if not resp or len(resp) < 20:
+            return None
+
+        # 用回答第一句作标题（截断 ≤50 字）
+        title = resp.split("。")[0].split("\n")[0]
+        if len(title) > 50:
+            title = title[:50]
+        if len(title) < 4:
+            title = query[:50]
+
+        # 回答全文作内容（截断）
+        content = resp[:self.max_draft_length * 4]
+
+        # 基于内容关键词频率检测分类（不依赖分类名本身的字符串匹配）
+        category = self._detect_category_by_content(query + " " + resp)
+
+        # 从 query 和 content 抽取关键词作标签
+        stop_words = {"的", "了", "在", "是", "我", "有", "和", "就", "不", "人",
+                       "都", "一", "一个", "上", "也", "很", "到", "说", "要",
+                       "去", "你", "会", "着", "没有", "看", "好", "自己", "这",
+                       "pending", "query_id"}
+        text = f"{query} {resp}"
+        for ch in "，。！？、；：""''（）【】《》/\\,.:;!?\"'()[]{}":
+            text = text.replace(ch, " ")
+        words = []
+        for word in text.split():
+            word = word.strip().lower()
+            # 过滤 query_id 模式、pending 前缀、纯数字、过短词
+            if (len(word) >= 3 and word not in stop_words
+                    and not word.startswith("q_2026")
+                    and not word.replace(".", "").isdigit()):
+                words.append(word)
+
+        # 过滤包含 query_id 特征的 token
+        words = [w for w in words if not (w.startswith("q_2") and len(w) > 15)]
+        from collections import Counter
+        tags = [w for w, _ in Counter(words).most_common(5)]
+
+        draft = {
+            "title": title,
+            "content": content,
+            "category": category,
+            "tags": tags,
+        }
+        return self._validate(draft)
+
+    def _detect_category_by_content(self, text: str) -> str:
+        """基于已有规则内容的关键词重合度判断最佳分类。
+
+        构建 分类→词语集 映射（来自该分类下所有规则的 title+content+tags + 分类名），
+        用词语重合数量排序。无匹配则回退 general。
+        """
+        try:
+            rules = self.storage.list()
+        except Exception:
+            return "general"
+
+        # 构建分类→高频词集（缓存到实例避免重复扫描）
+        if not hasattr(self, "_cat_words_cache"):
+            cat_words = {}
+            for r in rules:
+                cat = r.category
+                if cat not in cat_words:
+                    cat_words[cat] = set()
+                # 加入分类名本身（重要：让 "security" 匹配含 security 的文本）
+                cat_words[cat].add(cat.lower())
+                tokens = f"{r.title} {r.content} {r.tags}".lower().split()
+                for t in tokens:
+                    t = t.strip("，。！？、；：""''（）【】《》/\\,.:;!?\"'()[]{}")
+                    if len(t) >= 3 and not t.replace(".", "").isdigit():
+                        cat_words[cat].add(t)
+            self._cat_words_cache = cat_words
+
+        probe_words = set()
+        for t in text.lower().split():
+            t = t.strip("，。！？、；：""''（）【】《》/\\,.:;!?\"'()[]{}")
+            if len(t) >= 3 and not t.replace(".", "").isdigit():
+                probe_words.add(t)
+
+        best_cat = "general"
+        best_score = 0
+        for cat, words in self._cat_words_cache.items():
+            overlap = len(probe_words & words)
+            if overlap > best_score:
+                best_score = overlap
+                best_cat = cat
+
+        return best_cat
 
     def generate_single(self, query: str, ai_response: str,
                         validation_result: str) -> Optional[dict]:

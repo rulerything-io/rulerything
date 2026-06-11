@@ -120,11 +120,11 @@ v3:
   # ── AI 桥接层 ──
   ai_bridge:
     enabled: true                  # 启用 AI 增强查询 + 自动提炼
-    provider: claude               # claude | openai | deepseek | local
+    provider: deepseek             # claude | openai | deepseek | local
     endpoint: ""                    # 留空则使用 provider 默认端点
-    api_key_env: "ANTHROPIC_API_KEY"
-    model: "claude-sonnet-4-6"     # 查询用模型（质量优先）
-    ingest_model: "claude-haiku-4-5"  # 提炼用模型（成本优先，留空则复用 model）
+    api_key_env: "DEEPSEEK_API_KEY"
+    model: "deepseek-v4-flash"     # 查询用模型（质量优先）
+    ingest_model: "deepseek-v4-flash"  # 提炼用模型（成本优先，留空则复用 model）
     confidence_threshold: 0.6      # 系统检索置信度 ≥ 此值 → 不调 AI
     daily_limit_usd: 1.0           # 每日 AI 预算上限（共享 key，安全阀）
     warn_threshold: 0.8            # 预算使用 80% 时告警

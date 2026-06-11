@@ -8,7 +8,7 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
 from fastapi import FastAPI, Query
 from fastapi.responses import RedirectResponse, JSONResponse
@@ -550,9 +550,22 @@ async def search(req: SearchRequest):
                 "results": [],  # 无结果
             }
             ai_result = ai_bridge.enhance_query(req.query, search_context=search_context)
-            if ai_result.get("source") == "delegated":
+            source = ai_result.get("source")
+            if source == "delegated":
                 ai_delegated = True
                 ai_query_id = ai_result.get("query_id", "")
+            elif source == "ai" and ai_result.get("content"):
+                # 直接 AI 回答：插入为虚拟搜索结果
+                ai_content = ai_result["content"]
+                ai_title = ai_result.get("title", req.query)[:60]
+                results.append(Rule(
+                    id=f"_ai_{int(time.time())}",
+                    title=ai_title,
+                    content=ai_content[:500],
+                    category="ai",
+                    tags=["ai-generated"],
+                    confidence=ai_result.get("confidence", 0.5),
+                ))
         except Exception:
             pass
 
@@ -1039,6 +1052,7 @@ class AIConfigRequest(BaseModel):
     cache_max_entries: Optional[int] = None
     max_new_rules_per_session: Optional[int] = None
     max_new_rules_per_day: Optional[int] = None
+    ingest_model: Optional[str] = None
 
 
 @app.post("/ai/config")
@@ -1079,11 +1093,52 @@ class AIRespondRequest(BaseModel):
     query_id: str
     response: str
     error_message: Optional[str] = None
+    # 结构化字段：由父 AI 直接指定，跳过 DraftGenerator 提炼
+    title: Optional[str] = None
+    category: Optional[str] = None
+    tags: Optional[List[str]] = None
+
+
+def _create_rule_from_ai_response(req: AIRespondRequest) -> str:
+    """父 AI 提供结构化数据时直接创建规则（跳过 DraftGenerator）。"""
+    from rule import Rule
+    from datetime import datetime
+    import hashlib
+
+    title = req.title.strip()
+    content = req.response.strip()
+    category = (req.category or "general").strip().lower()
+    tags = [t.strip().lower() for t in (req.tags or []) if t.strip()]
+
+    # 生成唯一 rule_id
+    raw = f"{title}{content}{datetime.now().isoformat()}"
+    suffix = hashlib.sha256(raw.encode()).hexdigest()[:8]
+    rule_id = f"ai_{category}_{datetime.now():%Y%m%d_%H%M%S}_{suffix}"
+
+    rule = Rule(
+        id=rule_id, title=title, content=content,
+        category=category, tags=tags,
+        confidence=0.6,  # 父 AI 直接提供的可信度中等偏上
+    )
+    storage_v2.add(rule)
+    if index:
+        index.add(rule)
+    storage_v2.log_ingestion(
+        query=f"ai_respond:{req.query_id}", rule_id=rule_id,
+        title=title, category=category, status="created",
+    )
+    logger.info("ai_bridge", f"结构化规则创建: {rule_id} [{category}] {title[:30]}")
+    return rule_id
 
 
 @app.post("/ai/respond")
 async def ai_respond(req: AIRespondRequest):
-    """提交对委托查询的回答（由父 AI 调用）。"""
+    """提交对委托查询的回答（由父 AI 调用）。
+
+    支持两种模式：
+    1. 仅 response → 走 auto_ingest 本地提取（use_parent_ai 兜底）
+    2. 提供 title/category/tags → 跳过提炼直接建规则
+    """
     if not storage_v2:
         return {"error": "SQLite 存储未启用"}
     ok = storage_v2.answer_pending_query(
@@ -1091,19 +1146,28 @@ async def ai_respond(req: AIRespondRequest):
         responder="parent-ai",
         error_message=req.error_message,
     )
-    if ok:
-        # 如果 auto_ingest 启用且回答有效，触发异步提炼
-        if auto_ingest and not req.error_message:
-            try:
-                auto_ingest.enqueue(
-                    f"pending:{req.query_id}",
-                    req.response,
-                    "consistent",
-                )
-            except Exception:
-                pass
-        return {"status": "ok"}
-    return JSONResponse(status_code=404, content={"error": "查询不存在或已回答"})
+    if not ok:
+        return JSONResponse(status_code=404, content={"error": "查询不存在或已回答"})
+
+    # 模式 2: 父 AI 提供了结构化规则数据 → 直接建规则
+    if req.title and len(req.title.strip()) >= 4:
+        try:
+            rule_id = _create_rule_from_ai_response(req)
+            return {"status": "ok", "rule_id": rule_id, "source": "structured"}
+        except Exception as e:
+            return {"status": "ok", "warning": f"规则创建失败: {e}", "source": "structured"}
+
+    # 模式 1: 走 auto_ingest 本地提炼
+    if auto_ingest and not req.error_message:
+        try:
+            auto_ingest.enqueue(
+                f"pending:{req.query_id}",
+                req.response,
+                "consistent",
+            )
+        except Exception:
+            pass
+    return {"status": "ok", "source": "delegated"}
 
 
 @app.get("/ai/query/status/{query_id}")
