@@ -38,6 +38,10 @@ class Rule:
     hit_count: int = 0
     last_hit: Optional[datetime] = None
 
+    # v3.0 字段
+    ai_verified: bool = False
+    last_ai_review: Optional[datetime] = None
+
     def __post_init__(self):
         if self.created_at is None:
             self.created_at = datetime.now()
@@ -70,7 +74,7 @@ class Rule:
         """序列化为 JSON 兼容字典。"""
         d = asdict(self)
         # datetime → ISO 字符串
-        for key in ("created_at", "last_verified", "last_hit", "expires_at"):
+        for key in ("created_at", "last_verified", "last_hit", "expires_at", "last_ai_review"):
             val = d.get(key)
             if isinstance(val, datetime):
                 d[key] = val.isoformat()
@@ -84,7 +88,7 @@ class Rule:
         # 兼容旧数据：content_hash 由 property 动态计算
         d.pop("content_hash", None)
         # ISO 字符串 → datetime
-        for key in ("created_at", "last_verified", "last_hit", "expires_at"):
+        for key in ("created_at", "last_verified", "last_hit", "expires_at", "last_ai_review"):
             val = d.get(key)
             if isinstance(val, str):
                 d[key] = datetime.fromisoformat(val)

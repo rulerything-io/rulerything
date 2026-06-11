@@ -2,3 +2,10 @@ __pycache__/
 *.pyc
 logs/
 .env
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+*.bundle
+data.backup.*
+config.yaml.backup.*

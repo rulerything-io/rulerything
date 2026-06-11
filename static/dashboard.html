@@ -152,15 +152,18 @@ tr:last-child td { border-bottom: none; }
 <body>
 
 <div class="sidebar">
-  <h1><span>&#9670; 规则系统</span> <span class="ver" id="sidebar-ver">v2.0</span></h1>
+  <h1><span>&#9670; 规则系统</span> <span class="ver" id="sidebar-ver">v3.0</span></h1>
   <div class="nav-item active" data-page="overview"><span class="icon">&#9632;</span><span>概览</span></div>
   <div class="nav-item" data-page="rules"><span class="icon">&#9776;</span><span>规则列表</span></div>
   <div class="nav-item" data-page="search-page"><span class="icon">&#9906;</span><span>搜索</span></div>
   <div class="nav-item" data-page="evolution"><span class="icon">&#9851;</span><span>进化管理</span></div>
+  <div class="nav-item" data-page="ai"><span class="icon">&#9729;</span><span>AI 控制</span></div>
+  <div class="nav-item" data-page="ai-config"><span class="icon">&#9881;</span><span>AI 设置</span></div>
+  <div class="nav-item" data-page="v3"><span class="icon">&#9889;</span><span>v3 系统</span></div>
   <div class="nav-item" data-page="logs"><span class="icon">&#9773;</span><span>日志 <span class="log-badge live">LIVE</span></span></div>
   <div style="flex:1"></div>
   <div style="padding:8px 16px;border-top:1px solid #636e72;margin-top:4px">
-    <button class="btn btn-danger btn-sm" style="width:100%" onclick="restartServer()">&#8635; 重启服务</button>
+    <button class="btn btn-danger btn-sm" style="width:100%" onclick="restartServer(event)">&#8635; 重启服务</button>
   </div>
 </div>
 
@@ -273,6 +276,220 @@ tr:last-child td { border-bottom: none; }
   <!-- Logs -->
   <div id="evo-logs-tab" class="evo-tab" style="display:none">
     <div class="cards" id="evo-stats-cards"></div>
+  </div>
+</div>
+
+<!-- ===== AI 控制 ===== -->
+<div id="page-ai" class="page">
+  <div class="page-title">
+    &#9729; AI 控制
+    <span class="auto-badge" id="ai-badge">● 自动刷新 10s</span>
+  </div>
+
+  <div class="cards" id="ai-cards">
+    <div class="card"><div class="label">状态</div><div class="value" id="ai-status">-</div><div class="sub" id="ai-model">-</div></div>
+    <div class="card green"><div class="label">AI 费用 (今日)</div><div class="value" id="ai-cost-today">$0.00</div><div class="sub" id="ai-budget-info">-</div></div>
+    <div class="card blue"><div class="label">缓存</div><div class="value" id="ai-cache-count">0</div><div class="sub" id="ai-cache-hits">0 次命中</div></div>
+    <div class="card purple"><div class="label">自动提炼</div><div class="value" id="ai-ingested">0</div><div class="sub" id="ai-ingested-info">0 重复 / 0 失败</div></div>
+    <div class="card orange"><div class="label">AI 调用统计</div><div class="value" id="ai-calls">0</div><div class="sub">总调用 / 缓存命中 / 跳过</div></div>
+  </div>
+
+  <div class="stat-row">
+    <div class="stat-group" id="ai-budget-stats">
+      <h3>预算详情</h3>
+      <div class="item"><span class="k">Provider</span><span class="v" id="ai-provider">-</span></div>
+      <div class="item"><span class="k">预算上限</span><span class="v" id="ai-limit">-</span></div>
+      <div class="item"><span class="k">已用</span><span class="v" id="ai-used">-</span></div>
+      <div class="item"><span class="k">剩余</span><span class="v" id="ai-remaining">-</span></div>
+      <div class="item"><span class="k">重置日期</span><span class="v" id="ai-reset">-</span></div>
+    </div>
+    <div class="stat-group" id="ai-validation-stats">
+      <h3>验证统计</h3>
+      <div class="item"><span class="k">待处理队列</span><span class="v" id="ai-queue">0</span></div>
+      <div class="item"><span class="k">今日已提炼</span><span class="v" id="ai-daily">0</span></div>
+      <div class="item"><span class="k">Session 上限</span><span class="v" id="ai-session-limit">-</span></div>
+      <div class="item"><span class="k">日上限</span><span class="v" id="ai-daily-limit">-</span></div>
+      <div class="item"><span class="k">去重阈值</span><span class="v" id="ai-dedup-threshold">-</span></div>
+    </div>
+  </div>
+
+  <!-- 委托查询待处理区 -->
+  <div id="ai-pending-section" style="display:none;margin-bottom:16px">
+    <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:12px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <span style="font-size:15px">&#9888;</span>
+      <span style="font-size:13px;flex:1">
+        <strong id="ai-pending-count">0</strong> 条待处理 AI 查询
+        <span style="font-size:12px;color:#636e72">— 使用 <code style="background:#f8f9fa;padding:1px 6px;border-radius:3px">python rule_helper.py ai-pending</code> 查看并回答</span>
+      </span>
+      <button class="btn btn-warning btn-sm" onclick="loadPendingQueries()">&#8635; 刷新</button>
+    </div>
+    <div id="ai-pending-list" style="margin-top:8px;display:none"></div>
+  </div>
+
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+    <button class="btn btn-success" onclick="triggerIngest()">&#9654; 运行提炼</button>
+    <button class="btn btn-outline" onclick="clearAICache()">&#8634; 清除缓存</button>
+    <button class="btn btn-outline" onclick="loadAIStatus()">刷新</button>
+    <span style="font-size:12px;color:#636e72;margin-left:8px;line-height:32px" id="ai-last-refresh"></span>
+  </div>
+
+  <div class="section-tabs" style="margin-top:16px">
+    <button class="section-tab active" data-tab="ai-ingest-log">提炼记录</button>
+    <button class="section-tab" data-tab="ai-feedback-log">反馈记录</button>
+  </div>
+
+  <div id="ai-ingest-log">
+    <table><thead><tr><th>时间</th><th>状态</th><th>标题</th><th>分类</th><th>去重方式</th><th>匹配规则</th></tr></thead>
+      <tbody id="ai-ingest-table"></tbody>
+    </table>
+    <div class="empty" id="ai-ingest-empty">暂无提炼记录</div>
+  </div>
+
+  <div id="ai-feedback-log" style="display:none">
+    <p style="font-size:13px;color:#636e72;margin-bottom:8px">反馈数据通过规则置信度变化体现，见规则列表中的置信度列。</p>
+  </div>
+</div>
+
+<!-- ===== AI 设置 ===== -->
+<div id="page-ai-config" class="page">
+  <div class="page-title">
+    &#9881; AI 设置
+    <span style="font-size:13px;font-weight:normal;color:#636e72;margin-left:12px">运行时配置，保存后立即生效</span>
+  </div>
+
+  <div style="background:#fff;border-radius:10px;padding:24px;box-shadow:0 1px 4px rgba(0,0,0,.08);max-width:720px">
+    <form id="ai-config-form" onsubmit="return saveAIConfig(event)">
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+
+        <div>
+          <label style="font-size:13px;color:#636e72;display:block;margin-bottom:4px">Provider</label>
+          <select id="cfg-provider" style="width:100%;padding:8px 12px;border:1px solid #dfe6e9;border-radius:6px;font-size:13px;font-family:inherit;background:#fff" onchange="onProviderChange()">
+            <option value="claude">Claude (Anthropic)</option>
+            <option value="openai">OpenAI</option>
+            <option value="deepseek">DeepSeek</option>
+            <option value="local">Local (ollama/vLLM)</option>
+          </select>
+        </div>
+
+        <div>
+          <label style="font-size:13px;color:#636e72;display:block;margin-bottom:4px">Model</label>
+          <select id="cfg-model" style="width:100%;padding:8px 12px;border:1px solid #dfe6e9;border-radius:6px;font-size:13px;font-family:inherit;background:#fff">
+          </select>
+        </div>
+
+        <div style="grid-column:span 2">
+          <label style="font-size:13px;color:#636e72;display:block;margin-bottom:4px">
+            API Key
+            <span style="font-size:11px;color:#b2bec3;font-weight:normal">（保存后存储于本地数据库）</span>
+          </label>
+          <div style="display:flex;gap:8px">
+            <input type="password" id="cfg-api-key" style="flex:1;padding:8px 12px;border:1px solid #dfe6e9;border-radius:6px;font-size:13px;font-family:inherit" placeholder="留空则使用环境变量">
+            <button type="button" class="btn btn-outline btn-sm" onclick="toggleKeyVisibility(event)" style="white-space:nowrap">显示</button>
+          </div>
+          <div style="font-size:12px;color:#b2bec3;margin-top:4px">
+            当前环境变量: <code id="cfg-api-key-env-display">ANTHROPIC_API_KEY</code>
+            <span id="cfg-api-key-status" style="margin-left:8px;font-weight:600">—</span>
+          </div>
+        </div>
+
+        <div>
+          <label style="font-size:13px;color:#636e72;display:block;margin-bottom:4px">Temperature</label>
+          <input type="number" id="cfg-temperature" step="0.05" min="0" max="1" style="width:100%;padding:8px 12px;border:1px solid #dfe6e9;border-radius:6px;font-size:13px;font-family:inherit">
+        </div>
+
+        <div>
+          <label style="font-size:13px;color:#636e72;display:block;margin-bottom:4px">Max Tokens</label>
+          <input type="number" id="cfg-max-tokens" step="1" min="64" max="8192" style="width:100%;padding:8px 12px;border:1px solid #dfe6e9;border-radius:6px;font-size:13px;font-family:inherit">
+        </div>
+
+        <div>
+          <label style="font-size:13px;color:#636e72;display:block;margin-bottom:4px">Daily Budget ($)</label>
+          <input type="number" id="cfg-daily-limit" step="0.1" min="0" style="width:100%;padding:8px 12px;border:1px solid #dfe6e9;border-radius:6px;font-size:13px;font-family:inherit">
+        </div>
+
+        <div>
+          <label style="font-size:13px;color:#636e72;display:block;margin-bottom:4px">Per-call Limit ($)</label>
+          <input type="number" id="cfg-per-call" step="0.01" min="0" style="width:100%;padding:8px 12px;border:1px solid #dfe6e9;border-radius:6px;font-size:13px;font-family:inherit">
+        </div>
+
+        <div>
+          <label style="font-size:13px;color:#636e72;display:block;margin-bottom:4px">Confidence Threshold</label>
+          <input type="number" id="cfg-confidence" step="0.05" min="0" max="1" style="width:100%;padding:8px 12px;border:1px solid #dfe6e9;border-radius:6px;font-size:13px;font-family:inherit">
+        </div>
+
+        <div>
+          <label style="font-size:13px;color:#636e72;display:block;margin-bottom:4px">Cache TTL (hours)</label>
+          <input type="number" id="cfg-cache-ttl" step="1" min="1" style="width:100%;padding:8px 12px;border:1px solid #dfe6e9;border-radius:6px;font-size:13px;font-family:inherit">
+        </div>
+
+      </div>
+
+      <div style="margin-top:16px;padding:16px;background:#f8f9fa;border-radius:8px;border:1px solid #dfe6e9">
+        <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer">
+          <input type="checkbox" id="cfg-parent-ai" style="width:18px;height:18px;cursor:pointer" onchange="onParentAIToggle()">
+          <span><strong>使用当前对话 AI（委托模式）</strong></span>
+          <span style="font-size:11px;color:#636e72">规则系统将 AI 查询存为待处理，由你（当前对话）来回答</span>
+        </label>
+      </div>
+
+      <div style="margin-top:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+          <input type="checkbox" id="cfg-enabled" style="width:18px;height:18px;cursor:pointer">
+          <span>启用 AI Bridge</span>
+        </label>
+        <button type="submit" class="btn btn-success" id="cfg-save-btn">&#10003; 保存配置</button>
+        <button type="button" class="btn btn-outline" onclick="loadAIConfig()">&#8635; 刷新</button>
+        <span style="font-size:12px;color:#b2bec3" id="cfg-status-msg"></span>
+      </div>
+
+      <div id="cfg-result" style="margin-top:12px;padding:10px 14px;border-radius:6px;font-size:13px;display:none"></div>
+    </form>
+  </div>
+</div>
+
+<!-- ===== v3 系统 ===== -->
+<div id="page-v3" class="page">
+  <div class="page-title">
+    &#9889; v3 系统模块
+    <span class="auto-badge" id="v3-badge">● 自动刷新 15s</span>
+  </div>
+
+  <div class="cards" id="v3-module-cards"></div>
+
+  <div class="stat-row" id="v3-mgmt-row" style="margin-top:16px">
+    <div class="stat-group">
+      <h3>管理循环</h3>
+      <div id="v3-mgmt-info"></div>
+    </div>
+    <div class="stat-group">
+      <h3>存储</h3>
+      <div id="v3-storage-info"></div>
+    </div>
+    <div class="stat-group">
+      <h3>索引</h3>
+      <div id="v3-index-info"></div>
+    </div>
+  </div>
+
+  <h3 style="margin:24px 0 12px">自动演化引擎</h3>
+  <div id="evolver-section">
+    <div id="evolver-stats" class="cards" style="margin-bottom:16px"></div>
+    <div id="evolver-strategies"></div>
+  </div>
+
+  <h3 style="margin:24px 0 12px">告警管理器</h3>
+  <div id="alert-section">
+    <div id="alert-health" class="stat-row"></div>
+    <div style="margin-top:8px">
+      <button class="btn btn-outline btn-sm" onclick="sendTestAlert()">&#128276; 发送测试告警</button>
+      <span id="alert-test-result" style="font-size:12px;color:#636e72;margin-left:8px"></span>
+    </div>
+  </div>
+
+  <h3 style="margin:24px 0 12px">依赖关系图</h3>
+  <div id="dep-graph-section">
+    <div id="dep-graph-info" class="stat-row"></div>
   </div>
 </div>
 
@@ -396,6 +613,7 @@ async function loadOverview() {
       <div class="card blue"><div class="label">分类</div><div class="value">${(stg.categories || []).length}</div><div class="sub">${(stg.categories || []).join(', ')}</div></div>
       <div class="card orange"><div class="label">热缓存</div><div class="value">${idx.hot_cache_size ?? 0}</div><div class="sub">冷区: ${idx.cold_count ?? 0}</div></div>
       <div class="card purple"><div class="label">标签</div><div class="value">${idx.tag_count ?? 0}</div><div class="sub">索引版本 ${idx.index_version ?? 0}</div></div>
+      <div class="card"><div class="label">AI 费率</div><div class="value">$${(stats.ai_storage && stats.ai_storage.daily_ai_cost || 0).toFixed(2)}</div><div class="sub" id="ov-ai-ingested">$(stats.ai_storage && stats.ai_storage.rules_ingested || 0) 条由 AI 提炼</div></div>
       <div class="card" style="grid-column:span 2"><div class="label">分类分布</div><div id="cat-chart"></div></div>
     `;
 
@@ -439,7 +657,7 @@ async function loadRules(cat) {
     empty.style.display = 'none';
 
     tbody.innerHTML = rules.map(r => `<tr>
-      <td style="font-family:monospace">${r.id}</td>
+      <td style="font-family:monospace">${esc(r.id)}</td>
       <td><strong>${esc(r.title)}</strong></td>
       <td><span class="tag">${esc(r.category)}</span></td>
       <td>${confidenceBar(r.confidence || 0)}</td>
@@ -476,7 +694,20 @@ async function doSearch() {
   try {
     const res = await api('POST', '/search', { query: q, search_type: st, category: cat });
     const results = res.results || [];
-    if (results.length === 0) { div.innerHTML = '<div class="empty">无匹配结果</div>'; return; }
+    if (results.length === 0) {
+      if (res.ai_delegated) {
+        div.innerHTML = '<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:12px 16px;font-size:13px">'
+          + '&#9888; 索引中无匹配规则，已委托 AI 处理 '
+          + '<span id="ai-status-' + esc(res.ai_query_id) + '">⏳ 等待处理…</span>'
+          + ' (<a href="/" onclick="event.preventDefault();document.querySelector(\'[data-page=ai]\').click()">查看待处理查询</a>)'
+          + '</div>';
+        // 轮询 AI 查询状态
+        pollAIStatus(res.ai_query_id);
+      } else {
+        div.innerHTML = '<div class="empty">无匹配结果</div>';
+      }
+      return;
+    }
     div.innerHTML = results.map(r => `<div class="result-card">
       <h3>${esc(r.title)} <span class="tag">${esc(r.category)}</span></h3>
       <div class="meta">
@@ -603,8 +834,8 @@ async function populateCatFilter() {
     const cats = stats.storage.categories || [];
     const sel1 = document.getElementById('rule-cat-filter');
     const sel2 = document.getElementById('scat');
-    const opts1 = '<option value="all">全部分类</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
-    const opts2 = '<option value="all">全部分类</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
+    const opts1 = '<option value="all">全部分类</option>' + cats.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+    const opts2 = '<option value="all">全部分类</option>' + cats.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
     sel1.innerHTML = opts1;
     sel2.innerHTML = opts2;
     sel1.addEventListener('change', () => loadRules());
@@ -681,13 +912,328 @@ function startLogPolling() {
   logPollTimer = setInterval(loadLogs, 3000);
 }
 
+// ── AI Control ──
+
+async function loadAIStatus() {
+  try {
+    const [v3, stats, ingestLogs] = await Promise.all([
+      api('GET', '/v3/status'),
+      api('GET', '/ai/stats'),
+      api('GET', '/ingest/logs?limit=20'),
+    ]);
+    const ai = v3.ai_bridge || {};
+    const ingest = v3.auto_ingest || {};
+    const st = stats.ai_bridge || {};
+    const aiStore = stats.storage || {};
+
+    // Cards
+    const enabled = ai.enabled;
+    document.getElementById('ai-status').textContent = enabled ? '已启用' : '未启用';
+    document.getElementById('ai-status').style.color = enabled ? '#00b894' : '#b2bec3';
+    document.getElementById('ai-model').textContent = 'Provider: ' + (ai.budget ? 'claude' : '-');
+
+    const budget = ai.budget || {};
+    document.getElementById('ai-cost-today').textContent = '$' + (budget.cost_today || 0).toFixed(4);
+    document.getElementById('ai-budget-info').textContent = (budget.usage_ratio || 0) >= 1 ? '⚠ 已耗尽' : '剩余 $' + (budget.remaining || 0).toFixed(2);
+
+    document.getElementById('ai-cache-count').textContent = aiStore.cache_entries || 0;
+    document.getElementById('ai-cache-hits').textContent = (aiStore.cache_total_hits || 0) + ' 次命中';
+
+    document.getElementById('ai-ingested').textContent = aiStore.rules_ingested || 0;
+    document.getElementById('ai-ingested-info').textContent = (aiStore.rules_duplicate_skipped || 0) + ' 重复 / 0 失败';
+
+    const s = st.stats || {};
+    document.getElementById('ai-calls').innerHTML = (s.ai_calls || 0) + ' / ' + (s.cache_hits || 0) + ' / ' + (s.budget_skips || 0);
+
+    // Budget detail
+    document.getElementById('ai-provider').textContent = (ai.budget ? 'claude' : '-');
+    document.getElementById('ai-limit').textContent = '$' + (budget.daily_limit || 0).toFixed(2);
+    document.getElementById('ai-used').textContent = '$' + (budget.cost_today || 0).toFixed(4);
+    document.getElementById('ai-remaining').textContent = '$' + (budget.remaining || 0).toFixed(2);
+    document.getElementById('ai-reset').textContent = budget.reset_date || '-';
+
+    // Validation stats
+    const aiIngest = stats.auto_ingest || {};
+    document.getElementById('ai-queue').textContent = aiIngest.current_queue_size || 0;
+    document.getElementById('ai-daily').textContent = aiIngest.daily_count || 0;
+    document.getElementById('ai-session-limit').textContent = aiIngest.session_limit || '-';
+    document.getElementById('ai-daily-limit').textContent = aiIngest.daily_limit || '-';
+
+    const dedup = aiIngest.dedup || {};
+    document.getElementById('ai-dedup-threshold').textContent = dedup.current_threshold || '-';
+
+    // Pending / delegated
+    const delegated = s.delegated_queries || 0;
+    const pendingSection = document.getElementById('ai-pending-section');
+    if (delegated > 0) {
+      pendingSection.style.display = 'block';
+      loadPendingQueries();
+    } else if (v3.ai_bridge && v3.ai_bridge.stats && v3.ai_bridge.stats.delegated_queries) {
+      pendingSection.style.display = 'block';
+      loadPendingQueries();
+    } else {
+      pendingSection.style.display = 'none';
+    }
+
+    // Timestamp
+    document.getElementById('ai-last-refresh').textContent = '更新于 ' + new Date().toLocaleTimeString();
+
+    // Ingestion logs
+    const logs = ingestLogs.logs || [];
+    const tbody = document.getElementById('ai-ingest-table');
+    const empty = document.getElementById('ai-ingest-empty');
+    if (logs.length === 0) {
+      tbody.innerHTML = '';
+      empty.style.display = 'block';
+    } else {
+      empty.style.display = 'none';
+      tbody.innerHTML = logs.map(log => {
+        const ts = log.timestamp ? log.timestamp.slice(11, 19) : '-';
+        const statusColor = log.status === 'created' ? '#00b894' : log.status === 'duplicate' ? '#fdcb6e' : '#d63031';
+        return '<tr><td>' + ts + '</td>'
+          + '<td><span style="color:' + statusColor + ';font-weight:600">' + esc(log.status || '-') + '</span></td>'
+          + '<td>' + esc(log.title || '-') + '</td>'
+          + '<td>' + esc(log.category || '-') + '</td>'
+          + '<td>' + esc(log.dedup_method || '-') + '</td>'
+          + '<td>' + esc(log.matched_rule_id || '-') + '</td></tr>';
+      }).join('');
+    }
+  } catch (e) {
+    console.error('AI status load error:', e);
+  }
+}
+
+// ── Pending queries ──
+
+async function loadPendingQueries() {
+  try {
+    const data = await api('GET', '/ai/pending?limit=20');
+    const queries = data.queries || [];
+    const counts = data.counts || {};
+    const countEl = document.getElementById('ai-pending-count');
+    const listEl = document.getElementById('ai-pending-list');
+    countEl.textContent = counts.pending || 0;
+
+    if (queries.length === 0) {
+      listEl.style.display = 'none';
+      return;
+    }
+    listEl.style.display = 'block';
+    listEl.innerHTML = '<table><thead><tr><th>时间</th><th>查询 ID</th><th>问题</th></tr></thead><tbody>'
+      + queries.map(q => {
+          const ts = (q.created_at || '').slice(11, 22);
+          const qtext = (q.query || '').length > 60 ? (q.query || '').slice(0, 60) + '…' : (q.query || '');
+          return `<tr><td>${esc(ts)}</td><td style="font-family:monospace;font-size:11px">${esc(q.id)}</td><td>${esc(qtext)}</td></tr>`;
+        }).join('')
+      + '</tbody></table>';
+  } catch (e) {
+    console.error('loadPendingQueries error:', e);
+  }
+}
+
+async function triggerIngest() {
+  try {
+    const r = await api('POST', '/ingest/run');
+    toast('提炼完成: ' + (r.created || 0) + ' 条新规则', 'success');
+    loadAIStatus();
+    loadOverview();
+  } catch (e) {
+    toast('提炼失败: ' + e.message, 'error');
+  }
+}
+
+async function clearAICache() {
+  if (!confirm('确定清除 AI 缓存？')) return;
+  try {
+    await api('POST', '/ai/clear-cache');
+    toast('AI 缓存已清除', 'success');
+    loadAIStatus();
+  } catch (e) {
+    toast('操作失败: ' + e.message, 'error');
+  }
+}
+
+// ── AI Config ──
+
+const PROVIDER_MODELS = {
+  claude:  ['claude-sonnet-4-6', 'claude-haiku-4-5', 'claude-opus-4-6'],
+  openai:  ['gpt-4o', 'gpt-4o-mini', 'gpt-4o-mini', 'o3-mini'],
+  deepseek:['deepseek-chat', 'deepseek-reasoner'],
+  local:   ['qwen2.5:7b', 'qwen2.5:14b', 'llama3.1:8b', 'deepseek-r1:7b'],
+};
+
+function onParentAIToggle() {
+  const useParent = document.getElementById('cfg-parent-ai').checked;
+  const fields = ['cfg-provider', 'cfg-model', 'cfg-api-key', 'cfg-temperature',
+                  'cfg-max-tokens', 'cfg-daily-limit', 'cfg-per-call', 'cfg-confidence', 'cfg-cache-ttl'];
+  fields.forEach(id => {
+    document.getElementById(id).disabled = useParent;
+  });
+  document.getElementById('cfg-api-key').placeholder = useParent ? '(委托模式下不需要)' : '';
+  // Show info message
+  const msg = document.getElementById('cfg-status-msg');
+  if (useParent) {
+    msg.textContent = '委托模式：AI 查询将排队等待当前对话 AI 回答';
+    msg.style.color = '#0984e3';
+  } else {
+    msg.textContent = '';
+  }
+}
+
+function onProviderChange() {
+  const sel = document.getElementById('cfg-provider').value;
+  const modelSel = document.getElementById('cfg-model');
+  modelSel.innerHTML = (PROVIDER_MODELS[sel] || []).map(m =>
+    '<option value="' + m + '">' + m + '</option>'
+  ).join('');
+
+  // Update API key env hint
+  const envMap = { claude: 'ANTHROPIC_API_KEY', openai: 'OPENAI_API_KEY', deepseek: 'DEEPSEEK_API_KEY', local: '' };
+  document.getElementById('cfg-api-key-env-display').textContent = envMap[sel] || '(不需要)';
+
+  // Check current key status
+  updateKeyStatus();
+}
+
+function updateKeyStatus() {
+  const provider = document.getElementById('cfg-provider').value;
+  const el = document.getElementById('cfg-api-key-status');
+  if (provider === 'local') {
+    el.textContent = '本地模型无需 Key';
+    el.style.color = '#00b894';
+    return;
+  }
+  const keyField = document.getElementById('cfg-api-key');
+  if (keyField.value) {
+    el.textContent = '&#9679; 已填写（将保存到数据库）';
+    el.style.color = '#0984e3';
+  } else {
+    el.textContent = '&#9675; 读取环境变量';
+    el.style.color = '#636e72';
+  }
+}
+
+function toggleKeyVisibility(event) {
+  const el = document.getElementById('cfg-api-key');
+  const btn = event.target;
+  if (el.type === 'password') {
+    el.type = 'text';
+    btn.textContent = '隐藏';
+  } else {
+    el.type = 'password';
+    btn.textContent = '显示';
+  }
+}
+
+async function loadAIConfig() {
+  const msg = document.getElementById('cfg-status-msg');
+  msg.textContent = '加载中…';
+  try {
+    const cfg = await api('GET', '/ai/config');
+    if (cfg.error) { msg.textContent = '错误: ' + cfg.error; return; }
+
+    document.getElementById('cfg-provider').value = cfg.provider || 'claude';
+    onProviderChange();
+
+    // Set model (select or custom)
+    const modelSel = document.getElementById('cfg-model');
+    if (cfg.model) {
+      const exists = Array.from(modelSel.options).some(o => o.value === cfg.model);
+      if (!exists) {
+        const opt = document.createElement('option');
+        opt.value = cfg.model;
+        opt.textContent = cfg.model;
+        opt.selected = true;
+        modelSel.appendChild(opt);
+      }
+      modelSel.value = cfg.model;
+    }
+
+    // API key — don't fill if empty (already masked)
+    if (cfg.api_key_preview) {
+      document.getElementById('cfg-api-key').placeholder = cfg.api_key_preview;
+    }
+
+    document.getElementById('cfg-api-key').value = '';
+    updateKeyStatus();
+
+    document.getElementById('cfg-temperature').value = cfg.temperature ?? 0.3;
+    document.getElementById('cfg-max-tokens').value = cfg.max_tokens ?? 1024;
+    document.getElementById('cfg-daily-limit').value = cfg.daily_limit_usd ?? 5.0;
+    document.getElementById('cfg-per-call').value = cfg.per_call_limit_usd ?? 0.5;
+    document.getElementById('cfg-confidence').value = cfg.confidence_threshold ?? 0.6;
+    document.getElementById('cfg-cache-ttl').value = cfg.cache_ttl_hours ?? 24;
+    document.getElementById('cfg-enabled').checked = cfg.enabled !== false;
+    document.getElementById('cfg-parent-ai').checked = cfg.use_parent_ai === true;
+    onParentAIToggle();  // 同步禁用/启用字段
+
+    msg.textContent = '已加载';
+  } catch (e) {
+    msg.textContent = '加载失败: ' + e.message;
+  }
+}
+
+async function saveAIConfig(event) {
+  event.preventDefault();
+  const btn = document.getElementById('cfg-save-btn');
+  const result = document.getElementById('cfg-result');
+  btn.disabled = true;
+  btn.textContent = '⏳ 保存中…';
+  result.style.display = 'none';
+
+  try {
+    const body = {
+      provider: document.getElementById('cfg-provider').value,
+      model: document.getElementById('cfg-model').value,
+      temperature: parseFloat(document.getElementById('cfg-temperature').value) || 0.3,
+      max_tokens: parseInt(document.getElementById('cfg-max-tokens').value) || 1024,
+      daily_limit_usd: parseFloat(document.getElementById('cfg-daily-limit').value) || 5.0,
+      per_call_limit_usd: parseFloat(document.getElementById('cfg-per-call').value) || 0.5,
+      confidence_threshold: parseFloat(document.getElementById('cfg-confidence').value) || 0.6,
+      cache_ttl_hours: parseFloat(document.getElementById('cfg-cache-ttl').value) || 24,
+      enabled: document.getElementById('cfg-enabled').checked,
+      use_parent_ai: document.getElementById('cfg-parent-ai').checked,
+    };
+
+    // Only send API key if user filled it in
+    const apiKey = document.getElementById('cfg-api-key').value.trim();
+    if (apiKey) {
+      body.api_key = apiKey;
+    }
+
+    // Set api_key_env based on provider
+    const envMap = { claude: 'ANTHROPIC_API_KEY', openai: 'OPENAI_API_KEY', deepseek: 'DEEPSEEK_API_KEY' };
+    body.api_key_env = envMap[body.provider] || 'ANTHROPIC_API_KEY';
+
+    const resp = await api('POST', '/ai/config', body);
+    result.textContent = '✓ ' + (resp.message || '配置已保存');
+    result.style.display = 'block';
+    result.style.background = '#e8f8f5';
+    result.style.color = '#00b894';
+    toast('AI 配置已保存并生效', 'success');
+
+    // Refresh status
+    loadAIConfig();
+    loadAIStatus();
+  } catch (e) {
+    result.textContent = '✗ 保存失败: ' + e.message;
+    result.style.display = 'block';
+    result.style.background = '#fde8e8';
+    result.style.color = '#d63031';
+    toast('保存失败: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '✓ 保存配置';
+  }
+}
+
 function restartLogPolling() {
   if (logPollTimer) clearInterval(logPollTimer);
   startLogPolling();
 }
 
 // ── Restart Server ──
-async function restartServer() {
+async function restartServer(event) {
   if (!confirm('确定要重启规则系统服务？页面将在服务重启后自动刷新。')) return;
   const btn = event.target;
   btn.disabled = true;
@@ -725,6 +1271,190 @@ async function restartServer() {
   }
 }
 
+// ── v3 System Status ──
+
+async function loadV3Status() {
+  try {
+    const status = await api('GET', '/v3/status');
+
+    // Module status cards (7 v3 modules)
+    const moduleDefs = [
+      { key: 'dep_miner', label: '依赖挖掘', color: 'blue' },
+      { key: 'proposal_system', label: '自动提案', color: 'purple' },
+      { key: 'gap_detector', label: '缺口检测', color: 'orange' },
+      { key: 'ai_bridge', label: 'AI 桥接', color: 'green' },
+      { key: 'auto_ingest', label: '自动提炼', color: 'green' },
+      { key: 'auto_evolver', label: '自动演化', color: 'purple' },
+      { key: 'alert_manager', label: '告警系统', color: 'blue' },
+    ];
+    document.getElementById('v3-module-cards').innerHTML = moduleDefs.map(m => {
+      const mod = status[m.key] || {};
+      const enabled = mod.enabled;
+      const subParts = [];
+      if (m.key === 'alert_manager') {
+        const h = mod.health || {};
+        const s = h.stats || {};
+        if (s.total_sent) subParts.push(s.total_sent + ' 条已发送');
+      }
+      return '<div class="card ' + m.color + '"><div class="label">' + m.label + '</div>'
+        + '<div class="value" style="font-size:18px;color:' + (enabled ? '#00b894' : '#b2bec3') + '">' + (enabled ? '已启用' : '未启用') + '</div>'
+        + '<div class="sub">' + subParts.join(' | ') + '</div></div>';
+    }).join('');
+
+    // Management loop
+    const ml = status.management_loop || {};
+    document.getElementById('v3-mgmt-info').innerHTML = ''
+      + '<div class="item"><span class="k">运行中</span><span class="v" style="color:' + (ml.running ? '#00b894' : '#d63031') + '">' + (ml.running ? '是' : '否') + '</span></div>'
+      + '<div class="item"><span class="k">心跳</span><span class="v">' + (ml.heartbeat || '-') + '</span></div>';
+
+    // Storage
+    const sv2 = status.storage_v2 || {};
+    document.getElementById('v3-storage-info').innerHTML = ''
+      + '<div class="item"><span class="k">类型</span><span class="v">' + (status.storage || '-') + '</span></div>'
+      + '<div class="item"><span class="k">规则数</span><span class="v">' + (sv2.total_rules || (sv2.status === 'disabled' ? 'disabled' : 0)) + '</span></div>';
+
+    // Index
+    const idx = status.index || {};
+    document.getElementById('v3-index-info').innerHTML = ''
+      + '<div class="item"><span class="k">规则数</span><span class="v">' + (idx.rules || 0) + '</span></div>'
+      + '<div class="item"><span class="k">热缓存</span><span class="v">' + (idx.hot_cache || 0) + '</span></div>';
+
+    // Auto-evolver
+    if (status.auto_evolver && status.auto_evolver.enabled) {
+      loadEvolverStrategies();
+    } else {
+      document.getElementById('evolver-section').innerHTML = '<div class="empty">自动演化引擎未启用</div>';
+    }
+
+    // Alert manager
+    if (status.alert_manager && status.alert_manager.enabled) {
+      const h = status.alert_manager.health || {};
+      const s = h.stats || {};
+      document.getElementById('alert-health').innerHTML = ''
+        + '<div class="stat-group"><h3>通道</h3>'
+        + '<div class="item"><span class="k">日志</span><span class="v" style="color:#00b894">可用</span></div>'
+        + '<div class="item"><span class="k">Webhook</span><span class="v" style="color:' + (h.webhook_enabled ? '#00b894' : '#b2bec3') + '">' + (h.webhook_enabled ? '已配置' : '未配置') + '</span></div></div>'
+        + '<div class="stat-group"><h3>统计</h3>'
+        + '<div class="item"><span class="k">已发送</span><span class="v">' + (s.total_sent || 0) + '</span></div>'
+        + '<div class="item"><span class="k">最近告警</span><span class="v">' + (s.last_alert ? s.last_alert.slice(11, 19) : '-') + '</span></div></div>';
+    } else {
+      document.getElementById('alert-section').innerHTML = '<div class="empty">告警管理器未启用</div>';
+    }
+
+    // Dependency graph
+    try {
+      const graph = await api('GET', '/deps/graph');
+      const nodes = graph.nodes || [];
+      const edges = graph.edges || [];
+      document.getElementById('dep-graph-info').innerHTML = ''
+        + '<div class="stat-group"><h3>依赖图</h3>'
+        + '<div class="item"><span class="k">节点</span><span class="v">' + nodes.length + '</span></div>'
+        + '<div class="item"><span class="k">依赖边</span><span class="v">' + edges.length + '</span></div></div>';
+    } catch (e) {
+      document.getElementById('dep-graph-info').innerHTML = '<div class="empty">依赖挖掘未启用或暂无数据</div>';
+    }
+  } catch (e) { toast('加载 v3 状态失败: ' + e.message, 'error'); }
+}
+
+async function loadEvolverStrategies() {
+  try {
+    const stats = await api('GET', '/evolver/stats');
+
+    // Stats cards
+    document.getElementById('evolver-stats').innerHTML = ''
+      + '<div class="card blue"><div class="label">Tick 次数</div><div class="value">' + (stats.ticks || 0) + '</div></div>'
+      + '<div class="card green"><div class="label">执行成功</div><div class="value">' + (stats.strategies_succeeded || 0) + '</div></div>'
+      + '<div class="card orange"><div class="label">执行失败</div><div class="value">' + (stats.strategies_failed || 0) + '</div></div>'
+      + '<div class="card purple"><div class="label">回滚次数</div><div class="value">' + (stats.strategies_rolled_back || 0) + '</div></div>'
+      + '<div class="card"><div class="label">健康状态</div><div class="value" style="font-size:18px;color:' + (stats.healthy ? '#00b894' : '#d63031') + '">' + (stats.healthy ? '正常' : '异常') + '</div></div>';
+
+    // Strategy list
+    const strategies = stats.strategies || {};
+    const names = Object.keys(strategies);
+    if (names.length === 0) {
+      document.getElementById('evolver-strategies').innerHTML = '<div class="empty">暂无策略</div>';
+      return;
+    }
+
+    const riskColors = { low: '#00b894', medium: '#fdcb6e', high: '#d63031' };
+    document.getElementById('evolver-strategies').innerHTML = names.map(function(name) {
+      const s = strategies[name];
+      const lastRun = s.last_run ? new Date(s.last_run).toLocaleString() : '从未执行';
+      const riskColor = riskColors[s.risk] || '#dfe6e9';
+      return '<div class="evo-item">'
+        + '<div class="info"><strong>' + name + '</strong>'
+        + ' <span class="tag" style="background:' + riskColor + ';color:#fff">' + (s.risk || 'low') + '</span>'
+        + '<div class="desc">调度: ' + (s.schedule || '条件触发') + ' | 冷却: ' + (s.cooldown_hours || 0) + 'h | 上次: ' + lastRun + '</div></div>'
+        + '<button class="btn btn-primary btn-sm" onclick="runStrategy(\'' + name + '\')">&#9654; 执行</button>'
+        + '</div>';
+    }).join('');
+  } catch (e) {
+    document.getElementById('evolver-strategies').innerHTML = '<div class="empty">加载失败: ' + esc(e.message) + '</div>';
+  }
+}
+
+async function runStrategy(name) {
+  try {
+    const res = await api('POST', '/evolver/run/' + name);
+    const result = res.result || {};
+    toast('策略 ' + name + ' 已执行: ' + (result.status || 'ok'), 'success');
+    loadV3Status();
+  } catch (e) { toast('执行失败: ' + e.message, 'error'); }
+}
+
+async function sendTestAlert() {
+  document.getElementById('alert-test-result').textContent = '发送中…';
+  try {
+    const res = await api('POST', '/alerts/test');
+    document.getElementById('alert-test-result').textContent = '已发送 ✓';
+    toast('测试告警已发送', 'success');
+    setTimeout(function() { document.getElementById('alert-test-result').textContent = ''; }, 3000);
+  } catch (e) {
+    document.getElementById('alert-test-result').textContent = '失败: ' + e.message;
+    toast('发送失败: ' + e.message, 'error');
+  }
+}
+
+// ── AI Query Status Polling ──
+
+function pollAIStatus(queryId) {
+  if (!queryId) return;
+  var el = document.getElementById('ai-status-' + queryId);
+  if (!el) el = document.getElementById('ai-status-latest');
+  if (!el) return;
+
+  var attempts = 0;
+  var maxAttempts = 60; // 最长轮询 60 次
+
+  function poll() {
+    attempts++;
+    api('GET', '/ai/query/status/' + queryId)
+      .then(function(res) {
+        if (res.status === 'answered') {
+          el.innerHTML = '✅ 已回答';
+          el.style.color = '#00b894';
+        } else if (res.status === 'pending') {
+          el.innerHTML = '⏳ 等待处理中… (' + attempts + 's)';
+        } else if (res.status === 'error') {
+          el.innerHTML = '❌ 处理失败';
+          el.style.color = '#d63031';
+        }
+      })
+      .catch(function(err) {
+        console.error(err);
+      })
+      .finally(function() {
+        if (attempts < maxAttempts) {
+          setTimeout(poll, 3000);
+        } else {
+          el.innerHTML = '⏰ 超时，请查看 AI 控制页';
+        }
+      });
+  }
+
+  poll();
+}
+
 // ── Auto Refresh System ──
 let autoRefreshEnabled = false;
 let autoRefreshTimers = {};
@@ -732,6 +1462,8 @@ const AUTO_REFRESH_CONFIG = {
   overview: { interval: 10000, loadFn: loadOverview, badgeId: 'ov-badge' },
   rules:    { interval: 30000, loadFn: () => loadRules(), badgeId: 'rules-badge' },
   evolution:{ interval: 15000, loadFn: loadPending, badgeId: 'evo-badge' },
+  ai:       { interval: 10000, loadFn: loadAIStatus, badgeId: 'ai-badge' },
+  v3:       { interval: 15000, loadFn: loadV3Status, badgeId: 'v3-badge' },
 };
 
 function startAutoRefresh() {
@@ -776,7 +1508,7 @@ function toggleAutoRefresh() {
   // Load version for sidebar
   try {
     const h = await api('GET', '/health');
-    document.getElementById('sidebar-ver').textContent = 'v2.0 (引擎 ' + (h.version || '1.0.1') + ')';
+    document.getElementById('sidebar-ver').textContent = 'v3.0 (引擎 ' + (h.version || '1.0.1') + ')';
   } catch(e) {}
   // Apply paused style to badges (auto-refresh off by default)
   document.querySelectorAll('.auto-badge').forEach(el => {
@@ -788,6 +1520,9 @@ function toggleAutoRefresh() {
   await loadOverview();
   await loadRules('all');
   await loadPending();
+  await loadAIStatus();
+  await loadAIConfig();
+  await loadV3Status();
   // Load evolution stats
   try {
     const evo = await api('GET', '/evolution/stats');

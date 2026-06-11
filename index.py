@@ -3,6 +3,7 @@ Everything 风格索引层 — 排序数组 + 二分查找 + 前缀搜索 + 标�
 """
 
 import bisect
+import threading
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
@@ -39,8 +40,12 @@ class EverythingStyleIndex:
         # 统计
         self.index_version: int = 0
         self._hit_counter: int = 0                   # 累计命中计数
+        self._lock = threading.Lock()                # 命中计数线程安全锁
+        self._estimated_cache_bytes: int = 0         # 热缓存字节估算
         self.total_search_count: int = 0
         self.cache_hit_count: int = 0
+        self._cumulative_latency_ms: float = 0.0     # 累计搜索延迟（用于 avg_latency_ms）
+        self._latency_sample_count: int = 0          # record_latency 调用次数
 
         if rules:
             self.build(rules)
@@ -90,6 +95,52 @@ class EverythingStyleIndex:
                   and (now - r.last_hit).days > self.COLD_DAYS):
                 self.cold_ids.add(r.id)
 
+    # ── 增量操作 ───────────────────────────────────────
+
+    def add(self, rule: Rule):
+        """Add a single rule to the index incrementally."""
+        self._rules[rule.id] = rule
+        # Insert into sorted_titles maintaining sort order
+        bisect.insort(self.sorted_titles, rule.title)
+        self.title_to_id[rule.title] = rule.id
+        # Update category names
+        self._category_names.add(rule.category)
+        # Update tag index
+        for tag in rule.tags:
+            self.tag_index.setdefault(tag, []).append(rule.id)
+        # Classify hot/cold
+        if rule.hit_count >= self.HOT_THRESHOLD:
+            self.hot_ids.add(rule.id)
+            self.hot_cache[rule.id] = rule
+        elif rule.last_hit and (datetime.now() - rule.last_hit).days > self.COLD_DAYS:
+            self.cold_ids.add(rule.id)
+        self.index_version += 1
+
+    def remove(self, rule_id: str):
+        """Remove a rule from the index."""
+        rule = self._rules.pop(rule_id, None)
+        if rule is None:
+            return
+        # Remove from sorted_titles
+        pos = bisect.bisect_left(self.sorted_titles, rule.title)
+        if pos < len(self.sorted_titles) and self.sorted_titles[pos] == rule.title:
+            self.sorted_titles.pop(pos)
+        self.title_to_id.pop(rule.title, None)
+        # Remove from tag index
+        for tag in rule.tags:
+            if tag in self.tag_index:
+                try:
+                    self.tag_index[tag].remove(rule_id)
+                except ValueError:
+                    pass
+                if not self.tag_index[tag]:
+                    del self.tag_index[tag]
+        # Remove from caches
+        self.hot_ids.discard(rule_id)
+        self.hot_cache.pop(rule_id, None)
+        self.cold_ids.discard(rule_id)
+        self.index_version += 1
+
     # ── 命中记录 ───────────────────────────────────────
 
     def _record_hit(self, rule_id: str):
@@ -98,19 +149,26 @@ class EverythingStyleIndex:
         if rule is None:
             return
         rule.record_hit()
-        self._hit_counter += 1
-
-        # 周期性刷新热缓存
-        if self._hit_counter % self.HOT_UPDATE_INTERVAL == 0:
-            self._refresh_hot_cache()
+        with self._lock:
+            self._hit_counter += 1
+            if self._hit_counter % self.HOT_UPDATE_INTERVAL == 0:
+                self._refresh_hot_cache()
 
     def _refresh_hot_cache(self):
-        """增量刷新热缓存（无需全量重建）。"""
+        """增量刷新热缓存，超过上限时驱逐低热度条目。"""
         for rule in self._rules.values():
             if (rule.hit_count >= self.HOT_THRESHOLD
                     and rule.id not in self.hot_ids):
                 self.hot_ids.add(rule.id)
                 self.hot_cache[rule.id] = rule
+
+        # 驱逐：超过上限时移除最低命中率的条目
+        MAX_HOT = 500
+        if len(self.hot_cache) > MAX_HOT:
+            sorted_hot = sorted(self.hot_cache.items(), key=lambda x: x[1].hit_count)
+            for rule_id, _ in sorted_hot[:len(self.hot_cache) - MAX_HOT]:
+                self.hot_ids.discard(rule_id)
+                del self.hot_cache[rule_id]
 
     # ── 搜索方法 ───────────────────────────────────────
 
@@ -240,11 +298,12 @@ class EverythingStyleIndex:
           - 标题精确匹配:  ×1.00
           - 标题前缀匹配:  ×0.85
           - 标签精确匹配:  ×0.90
-          - 内容包含全查询: ×0.70
+          - 标题内容匹配:  ×0.80（标题包含查询）
+          - 仅内容包含:    ×0.50（标题未命中时）
           - 拆词前缀匹配:  ×0.55
           - 拆词标签匹配:  ×0.50
           - 拆词内容匹配:  ×0.45
-          - 分类命中加分:  +0.10（query.lower() 正好是某分类名时）
+          - 分类命中加分:  +0.05（query.lower() 正好是某分类名时）
 
         Args:
             query: 搜索关键词
@@ -358,7 +417,10 @@ class EverythingStyleIndex:
         return matches[:limit]
 
     def _from_cache_or_store(self, rule_id: str) -> Optional[Rule]:
-        """优先从热缓存返回，否则从全量规则返回。"""
+        """优先从热缓存返回，否则从全量规则返回。
+
+        TODO: 支持 cache.max_size_mb 配置，实现精确字节数计数和驱逐。
+        """
         if rule_id in self.hot_cache:
             self.cache_hit_count += 1
             return self.hot_cache[rule_id]
@@ -397,6 +459,11 @@ class EverythingStyleIndex:
 
     # ── 统计与状态 ──────────────────────────────────────
 
+    def record_latency(self, latency_ms: float):
+        """记录一次搜索延迟（用于平均延迟统计）。"""
+        self._cumulative_latency_ms += latency_ms
+        self._latency_sample_count += 1
+
     def stats(self) -> dict:
         """索引运行统计。"""
         return {
@@ -409,6 +476,10 @@ class EverythingStyleIndex:
             "cache_hit_rate": (
                 round(self.cache_hit_count / max(1, self.total_search_count) * 100, 1)
                 if self.total_search_count > 0 else 0.0
+            ),
+            "avg_latency_ms": (
+                round(self._cumulative_latency_ms / self._latency_sample_count, 2)
+                if self._latency_sample_count > 0 else 0.0
             ),
             "tag_count": len(self.tag_index),
         }

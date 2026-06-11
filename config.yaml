@@ -1,9 +1,9 @@
 # 自适应规则进化系统 — 配置文件
 
 server:
-  host: "0.0.0.0"
-  port: 8000
-  workers: 4
+  host: "127.0.0.1"
+  port: 8001
+  workers: 1
 
 index:
   hot_threshold: 3         # hit_count ≥ 此值进入热缓存（v2.0 优化：从 10 降至 3）
@@ -66,3 +66,82 @@ adaptive_system:
 semantic_search:
   enabled: true
   backend: bm25
+
+# ═══════════════════════════════════════════════════
+# v3.0 自适应规则系统配置
+# ═══════════════════════════════════════════════════
+
+v3:
+  enabled: true
+  storage: "sqlite"                # sqlite | jsonl
+
+  # ── 自动依赖挖掘 ──
+  dep_miner:
+    enabled: true
+    schedule_hour: 2               # 每天凌晨 2 点
+    cooccurrence_window: 1000      # 共现统计窗口（最近 N 次查询）
+    pmi_threshold: 0.3             # PMI 筛选阈值
+    content_sim_threshold: 0.7     # 内容相似度视为重复/冲突
+    use_scipy: true                # false=纯 Python 降级
+    min_queries_for_pmi: 100       # 低于此值仅用内容相似度
+
+  # ── 自动提案系统 ──
+  proposal_system:
+    enabled: true
+    scan_interval_seconds: 30      # 主循环间隔
+    cooldown_hours:
+      index_rebuild: 24
+      cache_tune: 4
+      quality_scan: 12
+      cold_archive: 168
+      dep_refresh: 24
+    circuit_breaker:
+      failure_threshold: 3
+      recovery_timeout_sec: 300
+
+  # ── 知识缺口检测 ──
+  gap_detector:
+    enabled: true
+    schedule_interval_hours: 168   # 每周一次
+    similarity_threshold: 0.3
+    min_frequency: 5               # 查询频率低于此值忽略
+    max_rules_per_week: 15
+    use_sklearn: true              # false=纯 Python 降级
+
+  # ── 自动演化 ──
+  auto_evolver:
+    enabled: true
+    require_approval: false        # false=自动执行
+    auto_snapshot_before_evolve: true
+    max_snapshots: 50
+    validation_min_samples: 10     # 统计验证最少样本数
+    validation_effect_threshold: 0.5  # Cohen's d 阈值
+
+  # ── AI 桥接层 ──
+  ai_bridge:
+    enabled: true                  # 启用 AI 增强查询 + 自动提炼
+    provider: claude               # claude | openai | deepseek | local
+    endpoint: ""                    # 留空则使用 provider 默认端点
+    api_key_env: "ANTHROPIC_API_KEY"
+    model: "claude-sonnet-4-6"     # 查询用模型（质量优先）
+    ingest_model: "claude-haiku-4-5"  # 提炼用模型（成本优先，留空则复用 model）
+    confidence_threshold: 0.6      # 系统检索置信度 ≥ 此值 → 不调 AI
+    daily_limit_usd: 1.0           # 每日 AI 预算上限（共享 key，安全阀）
+    warn_threshold: 0.8            # 预算使用 80% 时告警
+    per_call_limit_usd: 0.1        # 单次调用上限（haiku 调用约 $0.01）
+    cache_ttl_hours: 24            # AI 缓存有效期
+    cache_max_entries: 5000        # 缓存最大条目数
+    max_new_rules_per_session: 10  # 每次 session 最多提炼条数
+    max_new_rules_per_day: 50      # 每日最多提炼条数
+    temperature: 0.3               # LLM 温度（越低越确定）
+    max_tokens: 1024               # LLM 最大输出 token
+    title_dedup_threshold: 0.7     # 标题去重相似度阈值
+    batch_interval_seconds: 30     # 提炼队列处理间隔
+
+  # ── 超时控制 ──
+  timeouts:
+    dep_miner: 120
+    gap_detector: 60
+    auto_evolver: 300
+    index_rebuild: 600
+    ai_call: 30
