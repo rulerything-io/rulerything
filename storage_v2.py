@@ -1,4 +1,4 @@
-# Copyright 2026 Rulerything Project Authors
+# Copyright 2026 rulerything-io
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Copyright 2026 Rulerything Project Authors
+# Copyright 2026 rulerything-io
 """
 SQLite 存储层 — v3.0 规则存储，兼容 RuleStorage 接口。
 

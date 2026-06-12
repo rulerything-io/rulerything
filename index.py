@@ -1,4 +1,4 @@
-# Copyright 2026 Rulerything Project Authors
+# Copyright 2026 rulerything-io
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Copyright 2026 Rulerything Project Authors
+# Copyright 2026 rulerything-io
 """
 Everything 风格索引层 — 排序数组 + 二分查找 + 前缀搜索 + 标签索引 + 热缓存
 """
