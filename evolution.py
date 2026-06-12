@@ -258,9 +258,16 @@ class EvolutionEngine:
         if not dry_run and changes:
             # 保存变更
             self._save_all()
-            # 重建索引
+            # 增量更新索引，避免全量重建
             if self.index:
-                self.index.build(self.storage.list())
+                for c in changes:
+                    rid = c.get("rule_id")
+                    if not rid:
+                        continue
+                    self.index.remove(rid)
+                    rule = self.storage.get(rid)
+                    if rule:
+                        self.index.add(rule)
 
         return changes
 

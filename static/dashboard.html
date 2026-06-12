@@ -855,6 +855,7 @@ async function loadLogs() {
   const typeFilter = document.getElementById('log-type-filter').value;
   let url = '/logs?limit=100';
   if (level) url += '&level=' + level;
+  if (typeFilter) url += '&type=' + encodeURIComponent(typeFilter);
   try {
     const data = await api('GET', url);
     const entries = data.lines || [];
@@ -863,15 +864,9 @@ async function loadLogs() {
       div.innerHTML = '<div class="empty" style="color:#636e72">暂无日志</div>';
       return;
     }
-    // Filter by type client-side (since backend doesn't have type param)
-    const filtered = typeFilter ? entries.filter(e => (e.log_type || 'system') === typeFilter) : entries;
-    if (filtered.length === 0) {
-      div.innerHTML = '<div class="empty" style="color:#636e72">无匹配日志</div>';
-      return;
-    }
     const doScroll = document.getElementById('log-auto-scroll').checked;
     const atBottom = doScroll && (div.scrollTop + div.clientHeight >= div.scrollHeight - 50);
-    div.innerHTML = filtered.map(e => {
+    div.innerHTML = entries.map(e => {
       const ts = e.timestamp ? e.timestamp.slice(11, 22) : '--:--:--';
       const level = e.level || 'INFO';
       const type = e.log_type || 'system';
@@ -883,6 +878,7 @@ async function loadLogs() {
         if (e.result_count != null) extra.push('结果:' + e.result_count);
         if (e.latency_ms != null) extra.push(e.latency_ms + 'ms');
         if (e.user_feedback != null) extra.push('反馈:' + (e.user_feedback ? '满意' : '不满意'));
+        if (e.result_ids && e.result_ids.length) extra.push('规则: ' + e.result_ids.slice(0, 5).join(', ') + (e.result_ids.length > 5 ? '…' : ''));
       } else if (type === 'evolution') {
         msg = (e.rule_id || '?') + ' → ' + (e.evolution_type || '?');
         if (e.trigger_reason) extra.push(e.trigger_reason);

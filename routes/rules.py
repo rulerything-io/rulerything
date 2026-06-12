@@ -23,9 +23,15 @@ async def dedup_dry_run(auth=Depends(require_write_token)):
 
 @router.post("/dedup/apply")
 async def dedup_apply(auth=Depends(require_write_token)):
-    """执行去重。"""
+    """执行去重（增量更新索引）。"""
     results = state.storage.dedup_apply()
-    state.index.build(state.storage.list())
+    # 增量更新受去重影响的规则，避免全量重建
+    for r in results:
+        rule_id = r["rule_id"]
+        state.index.remove(rule_id)
+        updated = state.storage.get(rule_id)
+        if updated:
+            state.index.add(updated)
     state.logger.info("dedup", f"去重完成: {len(results)} 条规则被标记", count=len(results))
     return {"applied": len(results), "details": results}
 

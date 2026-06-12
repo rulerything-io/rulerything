@@ -26,6 +26,7 @@ async def search(req: SearchRequest):
         query=req.query,
         search_type=req.search_type,
         category=None if req.category == "all" else req.category,
+        lang=req.lang,
         limit=10,
     )
 
@@ -40,9 +41,7 @@ async def search(req: SearchRequest):
                 result_ids=[r.id for r in results],
             )
         except Exception:
-            pass
-
-    # 结构化日志
+            state.logger.warn("search", "v3 查询日志写入失败")
     state.logger.query(
         query=req.query,
         search_type=req.search_type,
@@ -94,13 +93,14 @@ async def search(req: SearchRequest):
                     confidence=ai_result.get("confidence", 0.5),
                 ))
         except Exception:
-            pass
+            state.logger.warn("search", "AI 兜底调用失败")
 
     return SearchResponse(
         results=[
             SearchResult(
                 title=r.title, content=r.content, id=r.id,
                 confidence=r.confidence, category=r.category, tags=r.tags,
+                lang=r.lang,
             )
             for r in results[:5]
         ],

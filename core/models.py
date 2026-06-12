@@ -10,6 +10,7 @@ class SearchRequest(BaseModel):
     query: str
     search_type: str = "exact"
     category: str = "all"
+    lang: Optional[str] = None  # 语言过滤: zh | en | ja | ...
     user_feedback: Optional[bool] = None
 
 
@@ -20,6 +21,7 @@ class SearchResult(BaseModel):
     confidence: float
     category: str
     tags: list
+    lang: str = "zh"
 
 
 class SearchResponse(BaseModel):

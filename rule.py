@@ -57,6 +57,9 @@ class Rule:
     ai_verified: bool = False
     last_ai_review: Optional[datetime] = None
 
+    # v1.1.0 语言标签
+    lang: str = "zh"  # zh | en | ja | ...
+
     def __post_init__(self):
         if self.created_at is None:
             self.created_at = datetime.now()

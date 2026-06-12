@@ -3,6 +3,7 @@ Rulerything — 系统管理路由
 """
 
 import json
+import os
 import subprocess
 import sys
 import threading
@@ -32,7 +33,7 @@ async def health():
     idx_stats = state.index.stats()
     return {
         "status": "ok",
-        "version": "1.1.0",
+        "version": "1.1.1",
         "uptime_seconds": int((datetime.now() - state._start_time).total_seconds()),
         **idx_stats,
     }
@@ -66,7 +67,6 @@ async def restart_server(auth=Depends(require_write_token)):
         )
         os._exit(0)
 
-    import os
     threading.Thread(target=_restart, daemon=True).start()
     state.logger.info("system", "服务器正在重启...")
     return {"status": "restarting", "message": "服务器正在重启..."}
@@ -74,27 +74,39 @@ async def restart_server(auth=Depends(require_write_token)):
 
 @router.get("/logs")
 async def get_logs(limit: int = Query(50, ge=1, le=500),
-                   level: Optional[str] = Query(None)):
+                   level: Optional[str] = Query(None),
+                   log_type: Optional[str] = Query(None, alias="type")):
     """获取最近的系统日志（JSON Lines）。"""
     log_file = Path(state._BASE_DIR) / "logs" / "system.log"
     if not log_file.exists():
         return {"lines": []}
 
-    with open(log_file, "r", encoding="utf-8") as f:
-        all_lines = f.readlines()
-
+    # Tail 策略：只读末尾 ~limit 行避免 OOM
     entries = []
-    for line in all_lines:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            entry = json.loads(line)
-        except json.JSONDecodeError:
-            entry = {"message": line, "level": "INFO", "log_type": "system"}
-        if level and entry.get("level", "").upper() != level.upper():
-            continue
-        entries.append(entry)
+    with open(log_file, "r", encoding="utf-8") as f:
+        # 快速跳到文件尾部读取
+        chunk_size = 8192
+        f.seek(0, 2)  # 跳到文件末尾
+        file_size = f.tell()
+        position = max(0, file_size - chunk_size * 4)  # 最多读 32KB
+        f.seek(position)
+        # 跳过第一行可能的不完整行
+        if position > 0:
+            f.readline()
+
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                entry = {"message": line, "level": "INFO", "log_type": "system"}
+            if level and entry.get("level", "").upper() != level.upper():
+                continue
+            if log_type and entry.get("log_type", "system") != log_type:
+                continue
+            entries.append(entry)
 
     return {"lines": entries[-limit:]}
 
@@ -166,6 +178,7 @@ async def v3_status():
         "management_loop": {
             "running": state._management_loop_active,
             "heartbeat": state._management_heartbeat,
+            "tick_interval_sec": state.config.get("v3", {}).get("management_tick_sec", 60),
         },
         "storage_v2": state.storage_v2.stats() if state.storage_v2 else {"status": "disabled"},
         "index": {
@@ -174,6 +187,16 @@ async def v3_status():
         },
         "uptime_seconds": int((datetime.now() - state._start_time).total_seconds()),
     }
+
+
+@router.post("/shutdown")
+async def shutdown(auth=Depends(require_write_token)):
+    """停止管理循环（不影响 API 服务）。"""
+    if state._stop_event:
+        state._stop_event.set()
+        state.logger.info("system", "管理循环停止信号已发送")
+        return {"status": "stopping", "message": "管理循环停止中..."}
+    return {"status": "not_running", "message": "管理循环未运行"}
 
 
 @router.get("/v3/health")

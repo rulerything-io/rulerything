@@ -37,6 +37,9 @@ app = FastAPI(
     title="Rulerything",
     version="1.1.0",
     description="作为大语言模型确定性副脑的知识规则系统",
+    docs_url="/docs",
+    openapi_url="/openapi.json",
+    redoc_url="/redoc",
 )
 state.app = app
 

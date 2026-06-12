@@ -308,11 +308,14 @@ class EverythingStyleIndex:
 
     def _scored_merge(self, scored: List[Tuple[Rule, float]],
                       category: Optional[str] = None,
+                      lang: Optional[str] = None,
                       limit: int = 10) -> List[Rule]:
-        """合并去重 → 分类过滤 → 按分数排序 → top-k。"""
+        """合并去重 → 分类/语言过滤 → 按分数排序 → top-k。"""
         best: Dict[str, Tuple[Rule, float]] = {}
         for rule, score in scored:
             if category and rule.category != category:
+                continue
+            if lang and rule.lang != lang:
                 continue
             rid = rule.id
             if rid not in best or score > best[rid][1]:
@@ -321,7 +324,8 @@ class EverythingStyleIndex:
         return [r for r, _ in sorted_[:limit]]
 
     def search(self, query: str, search_type: str = "exact",
-               category: Optional[str] = None, limit: int = 10) -> List[Rule]:
+               category: Optional[str] = None, limit: int = 10,
+               lang: Optional[str] = None) -> List[Rule]:
         """统一搜索入口 — 全策略合并 + 匹配类型加权排序。
 
         所有策略同时执行，结果按匹配类型 × confidence 加权后合并，
@@ -343,6 +347,7 @@ class EverythingStyleIndex:
             search_type: exact | prefix | tag
             category: 分类过滤（可选）
             limit: 最大返回数量
+            lang: 语言过滤（可选）: zh | en | ja | ...
         """
         scored: List[Tuple[Rule, float]] = []
         q_lower = query.lower()
@@ -416,7 +421,7 @@ class EverythingStyleIndex:
                 for r, s in scored
             ]
 
-        return self._scored_merge(scored, category=category, limit=limit)
+        return self._scored_merge(scored, category=category, lang=lang, limit=limit)
 
     def _search_content(self, query: str, limit: int = 10,
                         match_mode: str = "anywhere") -> List[Rule]:

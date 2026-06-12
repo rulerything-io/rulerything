@@ -33,10 +33,13 @@ AdaptiveRuleSystem — Everything 风格集成协调器（Phase 3）
 """
 
 import asyncio
+import logging
 from datetime import datetime
 from typing import Dict, List, Optional
 
 from rule import Rule
+
+logger = logging.getLogger(__name__)
 
 
 class AdaptiveRuleSystem:
@@ -93,7 +96,7 @@ class AdaptiveRuleSystem:
                     if loop.is_running():
                         asyncio.create_task(self._initial_preheat())
                 except RuntimeError:
-                    pass  # 无事件循环时跳过预热
+                    logger.warning("Adaptive: 无事件循环，跳过预热")
 
         # ── Phase 3 插件：语义搜索（独立，默认关闭） ──
         self.semantic = None
@@ -105,6 +108,7 @@ class AdaptiveRuleSystem:
                 )
                 self._build_semantic_index()
             except Exception:
+                logger.warning("Adaptive: 语义引擎初始化失败，降级")
                 self.semantic = None  # 静默降级
 
     def _load_rules_into_index(self):
@@ -125,6 +129,7 @@ class AdaptiveRuleSystem:
             ]
             self.semantic.build(corpus)
         except Exception:
+            logger.warning("Adaptive: 语义索引构建失败，降级")
             self.semantic = None
 
     # ── 查询 ─────────────────────────────────────────
@@ -203,7 +208,7 @@ class AdaptiveRuleSystem:
                     set(self.rules.keys()),
                 )
         except Exception:
-            pass  # 预热失败不影响系统运行
+            logger.warning("Adaptive: 预热失败")  # 预热失败不影响系统运行
 
     # ── 反馈处理 ─────────────────────────────────────
 

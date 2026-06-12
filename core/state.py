@@ -6,6 +6,7 @@ Rulerything — 共享状态容器
 
 import json
 import os
+import threading
 from datetime import datetime
 from typing import Optional
 
@@ -44,6 +45,7 @@ class AppState:
     _start_time: datetime = None
     _management_heartbeat: Optional[str] = None
     _management_loop_active: bool = False
+    _stop_event: threading.Event = None  # 管理循环停止信号
     HAS_V3: bool = False
 
     # ── FastAPI 应用 ────────────────────────────────────

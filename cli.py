@@ -78,7 +78,7 @@ def _print(d: dict, indent: int = 0):
 
 def cmd_search(args, index):
     """搜索规则。"""
-    results = index.search(args.query, args.type, args.category, limit=20)
+    results = index.search(args.query, args.type, args.category, limit=20, lang=getattr(args, 'lang', None))
     if not results:
         print(f"{Color.YELLOW}未找到匹配规则。{Color.RESET}")
         return
@@ -350,6 +350,7 @@ def main():
     p_search.add_argument("--type", "-t", choices=["exact", "prefix", "tag"],
                           default="exact", help="搜索类型")
     p_search.add_argument("--category", "-c", help="分类过滤")
+    p_search.add_argument("--lang", "-l", help="语言过滤 (zh/en/ja/...)")
 
     # list
     p_list = sub.add_parser("list", help="列出规则")
@@ -408,19 +409,16 @@ def main():
 
     # 初始化核心组件
     config = load_config()
+    data_dir = str(Path("data").resolve())
 
-    # 检测 v3 模式，优先使用 SQLite 存储
+    # 检测 v3 模式，优先使用 SQLite 存储（与服务器一致）
     v3_enabled = config.get("v3", {}).get("enabled", False)
-    storage = None
     if v3_enabled:
-        try:
-            from storage_v2 import RuleStorageV2
-            storage = RuleStorageV2(str(Path("data") / "rules.db"))
-        except ImportError:
-            pass
-    if storage is None:
+        from storage_v2 import RuleStorageV2
+        storage = RuleStorageV2(data_dir)
+    else:
         from storage import RuleStorage
-        storage = RuleStorage("data")
+        storage = RuleStorage(data_dir)
 
     logger = RuleLogger("logs", level=config["logging"]["level"])
     index = EverythingStyleIndex(storage.list())

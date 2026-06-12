@@ -76,7 +76,7 @@ class RuleLogger:
         # 同时输出到控制台（可选）
         console = logging.StreamHandler()
         console.setFormatter(JSONFormatter())
-        console.setLevel(logging.WARN)  # 控制台只显示 WARN+
+        console.setLevel(logging.WARNING)  # 控制台只显示 WARNING+
         self._logger.addHandler(console)
 
     def _log(self, level: int, log_type: str, message: str = "", **kwargs):
@@ -125,7 +125,7 @@ class RuleLogger:
 
     def warn(self, component: str, message: str, **kwargs):
         """记录警告日志。"""
-        self._log(logging.WARN, "system", component=component, message=message, **kwargs)
+        self._log(logging.WARNING, "system", component=component, message=message, **kwargs)
 
     def info(self, component: str, message: str, **kwargs):
         """记录信息日志。"""

@@ -34,6 +34,7 @@ Everything 原则：
 import abc
 import hashlib
 import json
+import logging
 import os
 import random
 import threading
@@ -42,6 +43,8 @@ import urllib.error
 import urllib.request
 from datetime import datetime, date
 from typing import Any, Callable, Dict, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 
 # ── 辅助 ────────────────────────────────────────────────
@@ -136,8 +139,8 @@ class AIBudget:
             saved_date = self.storage.get_config("ai_cost_date", "")
             if saved_date == str(self._today):
                 self._cost_today = float(raw)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("AIBridge._load: 无法加载预算状态 — %s", e)
 
     def _save(self):
         """同步到 config_runtime（每 N 次调用写一次）。"""
@@ -148,8 +151,8 @@ class AIBudget:
         try:
             self.storage.set_config("ai_cost_today", str(round(self._cost_today, 6)))
             self.storage.set_config("ai_cost_date", str(self._today))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("AIBridge._save: 无法同步预算 — %s", e)
 
     def _check_reset(self):
         """检测日期变更，自动重置。"""
@@ -161,8 +164,8 @@ class AIBudget:
             try:
                 self.storage.set_config("ai_cost_today", "0.0")
                 self.storage.set_config("ai_cost_date", str(today))
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("AIBridge._check_reset: 无法重置预算 — %s", e)
 
     def allow_call(self, estimated_cost: float = 0.05) -> bool:
         """检查是否可以调用 LLM。
@@ -665,6 +668,7 @@ class AICache:
             current = self.storage.get_rule_version_hash()
         except Exception:
             current = ""
+            logger.warning("AICache._get_version_key: 无法获取规则版本哈希")
         self._rule_version = current or self._rule_version
         raw = f"{query}|v{self._rule_version}"
         return hashlib.sha256(raw.encode()).hexdigest()[:32]
@@ -675,13 +679,14 @@ class AICache:
         try:
             entry = self.storage.ai_cache_get(key, ttl_hours=self.ttl_hours)
         except Exception:
+            logger.warning("AICache.lookup: 缓存读取失败")
             return None
 
         if entry:
             try:
                 self.storage.ai_cache_hit(key)
             except Exception:
-                pass
+                logger.warning("AICache.lookup: 缓存命中计数失败")
             return {
                 "query": entry["query"],
                 "content": entry["response"],
@@ -709,7 +714,7 @@ class AICache:
                 validation=json.dumps(validation, ensure_ascii=False) if validation else None,
             )
         except Exception:
-            pass
+            logger.warning("AICache.store: 缓存写入失败")
 
 
 # ── 统一入口 ────────────────────────────────────────────
@@ -831,6 +836,7 @@ class AIBridge:
             try:
                 query_id = self.storage.add_pending_query(query)
             except Exception:
+                logger.warning("AIBridge.enhance_query: 无法存储委托查询")
                 query_id = "unknown"
             self._inc_stat("delegated_queries")
             result.update({

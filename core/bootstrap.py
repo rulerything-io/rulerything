@@ -58,7 +58,7 @@ def bootstrap():
     state.config = load_config()
     state.log_level = state.config["logging"]["level"]
     state._BASE_DIR = str(Path(__file__).resolve().parent.parent)
-    state._DATA_DIR = str(Path(state._BASE_DIR) / "data")
+    state._DATA_DIR = os.environ.get("RULERYTHING_DATA_DIR") or str(Path(state._BASE_DIR) / "data")
     state.HAS_V3 = HAS_V3
 
     # ── 核心组件 ────────────────────────────────────────
@@ -137,6 +137,7 @@ def bootstrap():
 
     # ── 启动管理循环 ────────────────────────────────────
     if state.config.get("v3", {}).get("enabled", False):
+        state._stop_event = threading.Event()
         from core.background import management_loop
         mgmt_thread = threading.Thread(target=management_loop, daemon=True)
         mgmt_thread.start()
