@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# Copyright 2026 Rule-KB Project Authors
+# Copyright 2026 Rulerything Project Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-# Copyright 2026 Rule-KB Project Authors
+# Copyright 2026 Rulerything Project Authors
 """
 CLI 命令行工具 — 供人类使用的接入层
 
@@ -340,7 +340,7 @@ def cmd_config():
 
 def main():
     parser = argparse.ArgumentParser(
-        description="自适应规则进化系统 — CLI",
+        description="Rulerything — CLI",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     sub = parser.add_subparsers(dest="command", help="子命令")

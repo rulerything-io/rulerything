@@ -1,4 +1,4 @@
-# Copyright 2026 Rule-KB Project Authors
+# Copyright 2026 Rulerything Project Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Copyright 2026 Rule-KB Project Authors
+# Copyright 2026 Rulerything Project Authors
 """
 自进化引擎 — 基于反馈驱动的保守进化系统
 

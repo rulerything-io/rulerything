@@ -1,6 +1,6 @@
-# Rule-KB
+# Rulerything
 
-**自适应规则知识库系统** — 一个智能的、自演进的编程规则管理引擎。
+**智能规则知识库引擎** — 一个自演进的编程规则管理核心。
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
@@ -8,7 +8,7 @@
 
 ## Overview
 
-Rule-KB stores, indexes, retrieves, and autonomously evolves a knowledge base of programming rules across 30+ technology categories. Designed as a **drop-in knowledge layer for AI coding assistants** (Claude Code, Copilot, etc.), it provides:
+Rulerything stores, indexes, retrieves, and autonomously evolves a knowledge base of programming rules across 30+ technology categories. Designed as a **drop-in knowledge layer for AI coding assistants** (Claude Code, Copilot, etc.), it provides:
 
 - **Smart search** — semantic + category hybrid retrieval
 - **Auto-evolution** — rules grow and improve with usage data
@@ -55,7 +55,7 @@ python cli.py start | stop | restart | status
 **Claude Code** — Add to `CLAUDE.md`:
 ```markdown
 When answering technical questions, query the rule base:
-python /path/to/rule-kb/cli.py smart "<your question>"
+python /path/to/rulerything/cli.py smart "<your question>"
 ```
 
 ## Architecture

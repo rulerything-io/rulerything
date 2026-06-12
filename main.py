@@ -1,4 +1,4 @@
-# Copyright 2026 Rule-KB Project Authors
+# Copyright 2026 Rulerything Project Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Copyright 2026 Rule-KB Project Authors
+# Copyright 2026 Rulerything Project Authors
 """
-自适应规则进化系统 — FastAPI 服务入口
+Rulerything — FastAPI 服务入口
 """
 
 import json
@@ -409,7 +409,7 @@ if config.get("v3", {}).get("enabled", False):
 # ── FastAPI 应用 ──────────────────────────────────────
 
 app = FastAPI(
-    title="自适应规则进化系统",
+    title="Rulerything",
     version="1.0.1",
     description="作为大语言模型确定性副脑的知识规则系统",
 )
