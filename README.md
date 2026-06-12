@@ -129,7 +129,43 @@ main.py                → FastAPI server + WebSocket
 - `index.*` — cache thresholds, rebuild schedule
 - `evolution.*` — auto-apply, confidence thresholds
 - `immune.*` — quality scoring weights
-- `ai_bridge.*` — LLM provider, budget limits (requires API key)
+
+### API Key 配置（可选）
+
+Rulerything 的**基础搜索功能无需任何 API Key**，核心检索使用本地 BM25 算法。
+
+以下高级功能需要 LLM API Key：
+
+| 功能 | 是否需要 Key | 说明 |
+|------|------------|------|
+| 智能搜索（smart search） | ❌ 不需要 | 本地语义检索 |
+| 规则自动提炼 | ✅ 需要 | 从查询中自动生成新规则 |
+| 知识缺口检测 | ✅ 需要 | 发现规则库缺失的知识领域 |
+| 规则自动演化 | ✅ 需要 | AI 评分和优化现有规则 |
+
+设置方式：
+
+```bash
+# 方式一：环境变量
+export DEEPSEEK_API_KEY="sk-xxxx"     # DeepSeek (默认)
+# 或
+export ANTHROPIC_API_KEY="sk-xxxx"    # Claude
+# 或
+export OPENAI_API_KEY="sk-xxxx"       # OpenAI
+
+# 方式二：.env 文件
+echo "DEEPSEEK_API_KEY=sk-xxxx" > .env
+```
+
+支持的 Provider 在 `config.yaml` 中切换：
+
+```yaml
+ai_bridge:
+  provider: deepseek   # 可选: claude | openai | deepseek | local
+  api_key_env: "DEEPSEEK_API_KEY"
+```
+
+> 注意：`.env` 文件已在 `.gitignore` 中，不会提交到 GitHub。
 
 ## Use Cases
 
