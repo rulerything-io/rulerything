@@ -35,18 +35,51 @@ import abc
 import hashlib
 import json
 import os
+import random
 import threading
 import time
 import urllib.error
 import urllib.request
 from datetime import datetime, date
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 
 # ── 辅助 ────────────────────────────────────────────────
 
 def _iso_now() -> str:
     return datetime.now().isoformat()
+
+
+def _retry_with_backoff(
+    fn: Callable, max_retries: int = 3, base_delay: float = 1.0,
+    max_delay: float = 30.0, backoff_factor: float = 2.0,
+) -> Any:
+    """指数退避重试包装器。
+
+    Args:
+        fn: 无参可调用对象（已 partial 绑参）
+        max_retries: 最大重试次数
+        base_delay: 首次重试等待秒数
+        max_delay: 最大等待秒数
+        backoff_factor: 退避倍数
+
+    Returns:
+        fn() 的返回值
+
+    Raises:
+        最后一次尝试的异常
+    """
+    last_exc = None
+    for attempt in range(max_retries + 1):
+        try:
+            return fn()
+        except (urllib.error.URLError, OSError, RuntimeError) as e:
+            last_exc = e
+            if attempt < max_retries:
+                delay = min(base_delay * (backoff_factor ** attempt), max_delay)
+                jitter = random.uniform(0, delay * 0.1)
+                time.sleep(delay + jitter)
+    raise last_exc  # type: ignore
 
 
 # ── 验证结果枚举 ────────────────────────────────────────
@@ -606,42 +639,14 @@ class AIValidator:
     @staticmethod
     def _simple_tokenize(text: str) -> List[str]:
         """简易分词：英文单词 + CJK 二元组。"""
-        import re
-        tokens = []
-        text_lower = text.lower()
-        for word in re.findall(r'[a-z_+#0-9]+', text_lower):
-            if len(word) >= 2:
-                tokens.append(word)
-        cjk_seq = re.findall(r'[\u4e00-\u9fff]+', text)
-        for seq in cjk_seq:
-            for i in range(len(seq) - 1):
-                tokens.append(seq[i:i + 2])
-        return tokens
+        from nlp_utils import tokenize
+        return tokenize(text)
 
     @staticmethod
     def _jaccard_similarity(text: str, titles: List[str]) -> float:
         """Jaccard 相似度（降级方案）。"""
-        import re
-        text_tokens = set()
-        for word in re.findall(r'[a-z_+#0-9\u4e00-\u9fff]+', text.lower()):
-            if len(word) >= 2:
-                text_tokens.add(word)
-
-        if not text_tokens:
-            return 0.0
-
-        max_sim = 0.0
-        for title in titles[:100]:  # 前 100 条足够
-            title_tokens = set()
-            for word in re.findall(r'[a-z_+#0-9\u4e00-\u9fff]+', title.lower()):
-                if len(word) >= 2:
-                    title_tokens.add(word)
-            if not title_tokens:
-                continue
-            sim = len(text_tokens & title_tokens) / max(len(text_tokens | title_tokens), 1)
-            if sim > max_sim:
-                max_sim = sim
-        return max_sim
+        from nlp_utils import jaccard_similarity
+        return jaccard_similarity(text, titles)
 
 
 # ── AI 调用缓存 ─────────────────────────────────────────
@@ -979,8 +984,19 @@ class AIBridge:
 
         messages.append({"role": "user", "content": query})
 
-        return self.provider.chat(messages, max_tokens=self.config.get("max_tokens", 1024),
-                                  temperature=temperature)
+        # 指数退避重试
+        from functools import partial
+        retry_cfg = self.config.get("retry", {})
+        max_retries = retry_cfg.get("max_retries", 3)
+        base_delay = retry_cfg.get("base_delay_sec", 1.0)
+        chat_fn = partial(
+            self.provider.chat, messages,
+            max_tokens=self.config.get("max_tokens", 1024),
+            temperature=temperature,
+        )
+        return _retry_with_backoff(
+            chat_fn, max_retries=max_retries, base_delay=base_delay,
+        )
 
     def get_budget_status(self) -> dict:
         """预算状态。"""

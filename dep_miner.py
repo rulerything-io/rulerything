@@ -112,27 +112,32 @@ class DepMiner:
             return []
 
     def _get_query_results(self) -> List[List[str]]:
-        """获取最近 N 次查询的返回规则 ID 列表（从日志或指标）。"""
-        # 实际可以从 query_log 反查搜索结果
-        # phase A 简化：使用 get_recent_queries 返回的文本
-        # 后续可以在 query_log 中增加 result_ids 字段
-        results = []
+        """获取最近 N 次查询的返回规则 ID 列表（从 query_log 的 result_ids 字段）。"""
+        try:
+            # 优先使用 query_log 中存储的真实 result_ids
+            if hasattr(self.storage, "get_recent_query_results"):
+                results = self.storage.get_recent_query_results(
+                    days=7, limit=self.cooccurrence_window,
+                )
+                if results:
+                    return results
+        except Exception:
+            pass
+
+        # 降级：从 query_log 文本查询模拟（兼容旧数据）
         try:
             recent = self.storage.get_recent_queries(days=7, min_freq=1)
-            # 简化：对每个查询，用内容搜索模拟返回结果
-            # 真实场景应直接从 query_log 的 result_ids 字段读取
+            results = []
             for r in recent[:self.cooccurrence_window]:
                 query = r.get("query", "")
                 if query:
                     results.append(self._simulate_result_ids(query))
         except Exception:
-            pass
+            return []
         return results
 
     def _simulate_result_ids(self, query: str) -> List[str]:
-        """模拟：根据查询文本搜索规则，返回 ID 列表。"""
-        # 实际场景中 query_log 应存储 result_ids
-        # 这里用词级匹配模拟，要求至少 50% 的查询词命中标题或内容
+        """降级：从查询文本模拟搜索返回规则 ID（兼容旧数据无 result_ids 时）。"""
         ids = []
         try:
             rules = self.storage.list()
@@ -234,32 +239,14 @@ class DepMiner:
 
     def _tokenize(self, text: str) -> List[str]:
         """简单分词：提取英文单词和 CJK 字符。"""
-        tokens = []
-        # 英文单词
-        for word in re.findall(r'[a-zA-Z_+#.]+', text.lower()):
-            if len(word) >= 2:
-                tokens.append(word)
-        # CJK 二元组
-        cjk_seq = re.findall(r'[\u4e00-\u9fff]+', text)
-        for seq in cjk_seq:
-            for i in range(len(seq) - 1):
-                tokens.append(seq[i:i + 2])
-        return tokens
+        from nlp_utils import tokenize
+        return tokenize(text)
 
     def _cosine_similarity(self, vec_a: Dict[str, float],
                            vec_b: Dict[str, float]) -> float:
         """计算两个 TF 向量的余弦相似度。"""
-        intersection = set(vec_a) & set(vec_b)
-        if not intersection:
-            return 0.0
-
-        dot = sum(vec_a[k] * vec_b[k] for k in intersection)
-        norm_a = math.sqrt(sum(v * v for v in vec_a.values()))
-        norm_b = math.sqrt(sum(v * v for v in vec_b.values()))
-
-        if norm_a == 0 or norm_b == 0:
-            return 0.0
-        return dot / (norm_a * norm_b)
+        from nlp_utils import cosine_similarity
+        return cosine_similarity(vec_a, vec_b)
 
     def _compute_tf(self, text: str) -> Dict[str, float]:
         """计算词频向量。"""

@@ -151,7 +151,8 @@ class RuleStorageV2:
                     query_text TEXT NOT NULL,
                     latency_ms REAL,
                     result_count INTEGER,
-                    cache_hit INTEGER
+                    cache_hit INTEGER,
+                    result_ids TEXT DEFAULT ''
                 );
 
                 CREATE TABLE IF NOT EXISTS metrics_log (
@@ -211,7 +212,10 @@ class RuleStorageV2:
                 CREATE INDEX IF NOT EXISTS idx_rules_category_content ON rules(category, content);
                 CREATE INDEX IF NOT EXISTS idx_rules_cold_last_hit ON rules_cold(last_hit);
 
-                -- Phase C: AI 缓存
+                -- 迁移：为旧数据库添加 result_ids 列
+                CREATE TABLE IF NOT EXISTS _schema_version (version INTEGER);
+                INSERT INTO _schema_version (version) VALUES (0);
+                -- schema version 1: add result_ids to query_log
                 CREATE TABLE IF NOT EXISTS ai_cache (
                     query_hash TEXT PRIMARY KEY,
                     query TEXT NOT NULL,
@@ -288,6 +292,17 @@ class RuleStorageV2:
                     )
             except Exception as e:
                 logging.warning("ai_feedback 迁移失败: %s", e)
+
+            # 迁移 v1: query_log 添加 result_ids 列
+            try:
+                cols = {
+                    r["name"]
+                    for r in conn.execute("PRAGMA table_info(query_log)").fetchall()
+                }
+                if "result_ids" not in cols:
+                    conn.execute("ALTER TABLE query_log ADD COLUMN result_ids TEXT DEFAULT ''")
+            except Exception as e:
+                logging.warning("query_log 迁移失败: %s", e)
 
     def _connect(self) -> sqlite3.Connection:
         """创建新的数据库连接（线程安全）。"""
@@ -671,14 +686,16 @@ class RuleStorageV2:
     # ── 查询日志 ────────────────────────────────────────
 
     def log_query(self, query_text: str, latency_ms: float,
-                  result_count: int, cache_hit: bool):
+                  result_count: int, cache_hit: bool,
+                  result_ids: Optional[List[str]] = None):
         """记录一条查询日志。"""
         with self._lock:
             try:
                 with self._connect() as conn:
                     conn.execute(
-                        "INSERT INTO query_log (timestamp, query_text, latency_ms, result_count, cache_hit) VALUES (?, ?, ?, ?, ?)",
-                        (_iso_now(), query_text, latency_ms, result_count, int(cache_hit)),
+                        "INSERT INTO query_log (timestamp, query_text, latency_ms, result_count, cache_hit, result_ids) VALUES (?, ?, ?, ?, ?, ?)",
+                        (_iso_now(), query_text, latency_ms, result_count, int(cache_hit),
+                         ",".join(result_ids) if result_ids else ""),
                     )
             except sqlite3.Error:
                 pass  # 日志写入失败不阻断查询
@@ -693,6 +710,24 @@ class RuleStorageV2:
                     (cutoff, min_freq),
                 ).fetchall()
         return [{"query": r["query_text"], "frequency": r["freq"]} for r in rows]
+
+    def get_recent_query_results(self, days: int = 7, limit: int = 1000) -> List[List[str]]:
+        """获取近期查询的返回规则 ID 列表（用于 dep_miner 共现分析）。"""
+        cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+        with self._lock:
+            with self._connect() as conn:
+                rows = conn.execute(
+                    "SELECT result_ids FROM query_log WHERE timestamp > ? AND result_ids != '' ORDER BY timestamp DESC LIMIT ?",
+                    (cutoff, limit),
+                ).fetchall()
+        results = []
+        for r in rows:
+            ids_str = r["result_ids"]
+            if ids_str:
+                ids = [x for x in ids_str.split(",") if x]
+                if ids:
+                    results.append(ids)
+        return results
 
     def rotate_query_log(self):
         """清理超过保留期的查询日志。"""

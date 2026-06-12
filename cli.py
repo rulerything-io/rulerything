@@ -178,7 +178,7 @@ def _add_single(data: dict, storage, index, logger) -> tuple:
         rule = Rule.from_dict(data)
         ok, msg = storage.add(rule)
         if ok:
-            index.build(storage.list())
+            index.add(rule)
             logger.info("cli", f"添加规则 {rule.id}", rule_id=rule.id)
         return ok, msg
     except Exception as e:
@@ -201,7 +201,6 @@ def cmd_dedup(args, storage, index, logger):
         print(f"\n运行 {Color.BOLD}dedup --apply{Color.RESET} 执行去重")
     else:
         results = storage.dedup_apply()
-        index.build(storage.list())
         logger.info("cli", f"去重完成: {len(results)} 条")
         print(f"{Color.GREEN}去重完成: {len(results)} 条规则被标记为重复{Color.RESET}")
         for r in results:
@@ -409,7 +408,20 @@ def main():
 
     # 初始化核心组件
     config = load_config()
-    storage = RuleStorage("data")
+
+    # 检测 v3 模式，优先使用 SQLite 存储
+    v3_enabled = config.get("v3", {}).get("enabled", False)
+    storage = None
+    if v3_enabled:
+        try:
+            from storage_v2 import RuleStorageV2
+            storage = RuleStorageV2(str(Path("data") / "rules.db"))
+        except ImportError:
+            pass
+    if storage is None:
+        from storage import RuleStorage
+        storage = RuleStorage("data")
+
     logger = RuleLogger("logs", level=config["logging"]["level"])
     index = EverythingStyleIndex(storage.list())
     index.HOT_THRESHOLD = config["index"]["hot_threshold"]

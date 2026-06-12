@@ -20,8 +20,12 @@ Everything 风格索引层 — 排序数组 + 二分查找 + 前缀搜索 + 标�
 import bisect
 import threading
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
+from nlp_utils import (
+    extract_cjk_ngrams, extract_english_words, extract_words,
+    has_cjk, is_cjk,
+)
 from rule import Rule
 
 
@@ -45,6 +49,7 @@ class EverythingStyleIndex:
         self.sorted_titles: List[str] = []           # 排序后的标题列表
         self.title_to_id: Dict[str, str] = {}        # 标题 → id
         self.tag_index: Dict[str, List[str]] = {}    # 标签 → [rule_ids]
+        self._content_index: Dict[str, Set[str]] = {}  # 内容关键词 → {rule_ids}（加速 _search_content）
         self.hot_cache: Dict[str, Rule] = {}         # 高频规则（内存常驻）
         self.hot_ids: set = set()                    # 热缓存 ID 集合
         self.cold_ids: set = set()                   # 低频规则 ID 集合
@@ -73,6 +78,7 @@ class EverythingStyleIndex:
         self._category_names = {r.category for r in rules}
         self._build_sorted_titles()
         self._build_tag_index()
+        self._build_content_index()
         self._classify_hot_cold()
         self.index_version += 1
 
@@ -95,66 +101,136 @@ class EverythingStyleIndex:
                 index.setdefault(tag, []).append(r.id)
         self.tag_index = index
 
+    def _build_content_index(self):
+        """构建内容关键词倒排索引，加速 _search_content。"""
+        idx: Dict[str, Set[str]] = {}
+        for r in self._rules.values():
+            words = set()
+            for text in [r.title, r.content]:
+                words |= extract_words(text)
+            for w in words:
+                idx.setdefault(w, set()).add(r.id)
+        self._content_index = idx
+
+    @staticmethod
+    def _extract_content_words(text: str) -> Set[str]:
+        """从文本中提取关键词（字母/数字/CJK，长度 ≥ 2）。"""
+        return extract_words(text)
+
+    def reconcile(self, storage_rules: List[Rule]) -> dict:
+        """与存储层对比，将索引恢复到一致状态。
+
+        对比 storage_rules 与 self._rules 的差异：
+        - 存储中有但索引中没有的 → add
+        - 索引中有但存储中已无的 → remove
+        - 内容不同的已存在规则   → 重新 add（覆盖）
+
+        Returns:
+            {"added": [str], "removed": [str], "updated": [str]}
+        """
+        added: List[str] = []
+        removed: List[str] = []
+        updated: List[str] = []
+
+        storage_map = {r.id: r for r in storage_rules}
+
+        # 找需要添加或更新的
+        for rid, rule in storage_map.items():
+            existing = self._rules.get(rid)
+            if existing is None:
+                self.add(rule)
+                added.append(rid)
+            elif (existing.title != rule.title
+                  or existing.content != rule.content
+                  or existing.category != rule.category):
+                # 内容变化，先删后加
+                self.remove(rid)
+                self.add(rule)
+                updated.append(rid)
+
+        # 找需要删除的（索引中有但存储已无）
+        for rid in list(self._rules.keys()):
+            if rid not in storage_map:
+                self.remove(rid)
+                removed.append(rid)
+
+        if added or removed or updated:
+            self.index_version += 1
+
+        return {"added": added, "removed": removed, "updated": updated}
+
     def _classify_hot_cold(self):
         """热度分层：将规则分为热/温/冷三级。"""
-        now = datetime.now()
-        self.hot_ids = set()
-        self.cold_ids = set()
-        self.hot_cache.clear()
+        with self._lock:
+            now = datetime.now()
+            self.hot_ids = set()
+            self.cold_ids = set()
+            self.hot_cache.clear()
 
-        for r in self._rules.values():
-            if r.hit_count >= self.HOT_THRESHOLD:
-                self.hot_ids.add(r.id)
-                self.hot_cache[r.id] = r
-            elif (r.last_hit is not None
-                  and (now - r.last_hit).days > self.COLD_DAYS):
-                self.cold_ids.add(r.id)
+            for r in self._rules.values():
+                if r.hit_count >= self.HOT_THRESHOLD:
+                    self.hot_ids.add(r.id)
+                    self.hot_cache[r.id] = r
+                elif (r.last_hit is not None
+                      and (now - r.last_hit).days > self.COLD_DAYS):
+                    self.cold_ids.add(r.id)
 
     # ── 增量操作 ───────────────────────────────────────
 
     def add(self, rule: Rule):
-        """Add a single rule to the index incrementally."""
-        self._rules[rule.id] = rule
-        # Insert into sorted_titles maintaining sort order
-        bisect.insort(self.sorted_titles, rule.title)
-        self.title_to_id[rule.title] = rule.id
-        # Update category names
-        self._category_names.add(rule.category)
-        # Update tag index
-        for tag in rule.tags:
-            self.tag_index.setdefault(tag, []).append(rule.id)
-        # Classify hot/cold
-        if rule.hit_count >= self.HOT_THRESHOLD:
-            self.hot_ids.add(rule.id)
-            self.hot_cache[rule.id] = rule
-        elif rule.last_hit and (datetime.now() - rule.last_hit).days > self.COLD_DAYS:
-            self.cold_ids.add(rule.id)
-        self.index_version += 1
+        """Add a single rule to the index incrementally (thread-safe)."""
+        with self._lock:
+            self._rules[rule.id] = rule
+            # Insert into sorted_titles maintaining sort order
+            bisect.insort(self.sorted_titles, rule.title)
+            self.title_to_id[rule.title] = rule.id
+            # Update category names
+            self._category_names.add(rule.category)
+            # Update tag index
+            for tag in rule.tags:
+                self.tag_index.setdefault(tag, []).append(rule.id)
+            # Update content index
+            for w in self._extract_content_words(rule.title + ' ' + rule.content):
+                self._content_index.setdefault(w, set()).add(rule.id)
+            # Classify hot/cold
+            if rule.hit_count >= self.HOT_THRESHOLD:
+                self.hot_ids.add(rule.id)
+                self.hot_cache[rule.id] = rule
+            elif rule.last_hit and (datetime.now() - rule.last_hit).days > self.COLD_DAYS:
+                self.cold_ids.add(rule.id)
+            self.index_version += 1
 
     def remove(self, rule_id: str):
-        """Remove a rule from the index."""
-        rule = self._rules.pop(rule_id, None)
-        if rule is None:
-            return
-        # Remove from sorted_titles
-        pos = bisect.bisect_left(self.sorted_titles, rule.title)
-        if pos < len(self.sorted_titles) and self.sorted_titles[pos] == rule.title:
-            self.sorted_titles.pop(pos)
-        self.title_to_id.pop(rule.title, None)
-        # Remove from tag index
-        for tag in rule.tags:
-            if tag in self.tag_index:
-                try:
-                    self.tag_index[tag].remove(rule_id)
-                except ValueError:
-                    pass
-                if not self.tag_index[tag]:
-                    del self.tag_index[tag]
-        # Remove from caches
-        self.hot_ids.discard(rule_id)
-        self.hot_cache.pop(rule_id, None)
-        self.cold_ids.discard(rule_id)
-        self.index_version += 1
+        """Remove a rule from the index (thread-safe)."""
+        with self._lock:
+            rule = self._rules.pop(rule_id, None)
+            if rule is None:
+                return
+            # Remove from sorted_titles
+            pos = bisect.bisect_left(self.sorted_titles, rule.title)
+            if pos < len(self.sorted_titles) and self.sorted_titles[pos] == rule.title:
+                self.sorted_titles.pop(pos)
+            self.title_to_id.pop(rule.title, None)
+            # Remove from tag index
+            for tag in rule.tags:
+                if tag in self.tag_index:
+                    try:
+                        self.tag_index[tag].remove(rule_id)
+                    except ValueError:
+                        pass
+                    if not self.tag_index[tag]:
+                        del self.tag_index[tag]
+            # Remove from content index
+            for w in self._extract_content_words(rule.title + ' ' + rule.content):
+                if w in self._content_index:
+                    self._content_index[w].discard(rule_id)
+                    if not self._content_index[w]:
+                        del self._content_index[w]
+            # Remove from caches
+            self.hot_ids.discard(rule_id)
+            self.hot_cache.pop(rule_id, None)
+            self.cold_ids.discard(rule_id)
+            self.index_version += 1
 
     # ── 命中记录 ───────────────────────────────────────
 
@@ -229,64 +305,6 @@ class EverythingStyleIndex:
         return candidates[:limit]
 
     # ── CJK 辅助 ────────────────────────────────────────
-    _CJK_RANGES = (
-        (0x4E00, 0x9FFF),   # CJK 统一表意文字
-        (0x3400, 0x4DBF),   # CJK 扩展 A
-        (0x2E80, 0x2EFF),   # CJK 部首
-        (0x3000, 0x303F),   # CJK 符号和标点
-    )
-
-    @classmethod
-    def _is_cjk(cls, char: str) -> bool:
-        cp = ord(char)
-        return any(lo <= cp <= hi for lo, hi in cls._CJK_RANGES)
-
-    @classmethod
-    def _has_cjk(cls, text: str) -> bool:
-        return any(cls._is_cjk(ch) for ch in text)
-
-    @classmethod
-    def _extract_cjk_ngrams(cls, text: str, min_len: int = 2) -> List[str]:
-        """提取连续 CJK 序列及其 n-gram（不低于 min_len 字）。
-
-        '性能优化' (min_len=2) → ['性能','能优','优化','性能优','能优化','性能优化']
-        不产生单字符 n-gram，避免过噪音。
-        """
-        # 提取连续 CJK 段
-        seqs = []
-        cur = []
-        for ch in text:
-            if cls._is_cjk(ch):
-                cur.append(ch)
-            else:
-                if len(cur) >= min_len:
-                    seqs.append(''.join(cur))
-                cur = []
-        if len(cur) >= min_len:
-            seqs.append(''.join(cur))
-
-        ngrams = []
-        for seq in seqs:
-            for i in range(len(seq)):
-                for j in range(i + min_len, len(seq) + 1):
-                    ngrams.append(seq[i:j])
-        return ngrams
-
-    @classmethod
-    def _extract_english_words(cls, text: str, min_len: int = 2) -> List[str]:
-        """从（可能混合 CJK 的）文本中提取纯英文字词。"""
-        words = []
-        cur = []
-        for ch in text:
-            if not cls._is_cjk(ch) and ch.isalpha() and ch.isascii():
-                cur.append(ch.lower())
-            else:
-                if len(cur) >= min_len:
-                    words.append(''.join(cur))
-                cur = []
-        if len(cur) >= min_len:
-            words.append(''.join(cur))
-        return words
 
     def _scored_merge(self, scored: List[Tuple[Rule, float]],
                       category: Optional[str] = None,
@@ -328,7 +346,7 @@ class EverythingStyleIndex:
         """
         scored: List[Tuple[Rule, float]] = []
         q_lower = query.lower()
-        has_cjk = self._has_cjk(query)
+        has_cjk_flag = has_cjk(query)
 
         # ── 1. 主策略 ──
         _primary_had_results = False
@@ -365,13 +383,13 @@ class EverythingStyleIndex:
                 scored.append((r, r.confidence * 0.50))
 
         # ── 4. 拆词搜索 ──
-        if has_cjk:
+        if has_cjk_flag:
             # CJK n-gram 内容搜索（2+ 字，不含单字符）
-            for gram in self._extract_cjk_ngrams(query, min_len=2):
+            for gram in extract_cjk_ngrams(query, min_len=2):
                 for r in self._search_content(gram, limit // 2):
                     scored.append((r, r.confidence * 0.55))
             # 混合 CJK 文本中的英文词
-            for word in self._extract_english_words(query):
+            for word in extract_english_words(query):
                 for r in self.search_prefix(word, limit // 3):
                     scored.append((r, r.confidence * 0.55))
                 for r in self.search_by_tag(word, limit // 3):
@@ -404,7 +422,8 @@ class EverythingStyleIndex:
                         match_mode: str = "anywhere") -> List[Rule]:
         """在标题和/或内容中搜索关键词（不区分大小写），按置信度取 top-k。
 
-        通过 _from_cache_or_store 返回规则以确保缓存命中统计准确。
+        使用倒排索引加速：当查询中的关键词在倒排索引中存在时，只扫描候选规则；
+        否则回退全量扫描。
 
         Args:
             query: 搜索关键词
@@ -414,22 +433,61 @@ class EverythingStyleIndex:
         """
         q = query.lower()
         matches = []
+
+        # 快速路径：仅对内容搜索使用倒排索引（title_only 已有 search_exact/prefix 快速路径）
+        if match_mode != "title_only":
+            query_words = self._extract_content_words(q)
+            candidate_ids: Optional[Set[str]] = None
+            if query_words:
+                for w in query_words:
+                    ids = self._content_index.get(w)
+                    if ids is None:
+                        candidate_ids = None
+                        break
+                    if candidate_ids is None:
+                        candidate_ids = set(ids)
+                    else:
+                        candidate_ids &= ids
+
+            if candidate_ids is not None and len(candidate_ids) < len(self._rules) // 2:
+                for rid in candidate_ids:
+                    rule = self._rules.get(rid)
+                    if rule is None:
+                        continue
+                    in_title = q in rule.title.lower()
+                    in_content = q in rule.content.lower()
+                    ok = self._match_ok(in_title, in_content, match_mode)
+                    if ok:
+                        self.total_search_count += 1
+                        self._record_hit(rule.id)
+                        cached = self._from_cache_or_store(rule.id)
+                        matches.append(cached or rule)
+                matches.sort(key=lambda r: r.confidence, reverse=True)
+                return matches[:limit]
+
+        # 全量扫描（回退路径：title_only 或倒排索引不适用时）
         for rule in self._rules.values():
             in_title = q in rule.title.lower()
             in_content = q in rule.content.lower()
-            if match_mode == "title_only":
-                ok = in_title
-            elif match_mode == "content_only":
-                ok = in_content and not in_title
-            else:  # anywhere
-                ok = in_title or in_content
+            ok = self._match_ok(in_title, in_content, match_mode)
             if ok:
                 self.total_search_count += 1
                 self._record_hit(rule.id)
                 cached = self._from_cache_or_store(rule.id)
                 matches.append(cached or rule)
+
         matches.sort(key=lambda r: r.confidence, reverse=True)
         return matches[:limit]
+
+    @staticmethod
+    def _match_ok(in_title: bool, in_content: bool, match_mode: str) -> bool:
+        """判断匹配模式是否通过。"""
+        if match_mode == "title_only":
+            return in_title
+        elif match_mode == "content_only":
+            return in_content and not in_title
+        else:  # anywhere
+            return in_title or in_content
 
     def _from_cache_or_store(self, rule_id: str) -> Optional[Rule]:
         """优先从热缓存返回，否则从全量规则返回。

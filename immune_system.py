@@ -242,10 +242,13 @@ class RuleImmuneSystem:
         return conflict_score
 
     def _calculate_conflict_score(self, rule_id: str) -> float:
-        scores = [
-            score for (r1, r2), score in self.regulatory_t_cells.items()
-            if r1 == rule_id
-        ]
+        scores = []
+        for key, score in self.regulatory_t_cells.items():
+            if not isinstance(key, tuple) or len(key) != 2:
+                continue
+            r1, r2 = key
+            if r1 == rule_id:
+                scores.append(score)
         return float(statistics.mean(scores)) if scores else 0.0
 
     def _get_conflict_ids(self, rule_id: str) -> List[str]:

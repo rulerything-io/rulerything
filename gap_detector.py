@@ -175,65 +175,19 @@ class GapDetector:
 
     def _pure_python_tfidf(self, texts: List[str]) -> Tuple[List[Dict[str, float]], List[str]]:
         """纯 Python TF-IDF 实现（无外部依赖）。"""
-        # 分词
-        tokenized = []
-        for text in texts:
-            tokens = self._tokenize(text)
-            tokenized.append(tokens)
-
-        # 词频
-        tfs = []
-        for tokens in tokenized:
-            counter = Counter(tokens)
-            total = len(tokens) if tokens else 1
-            tfs.append({w: c / total for w, c in counter.items()})
-
-        # 文档频率
-        df = Counter()
-        for tokens in tokenized:
-            for w in set(tokens):
-                df[w] += 1
-
-        # IDF
-        n = len(texts)
-        idf = {w: math.log(n / (1 + freq)) + 1 for w, freq in df.items()}
-
-        # TF-IDF
-        vectors = []
-        for tf in tfs:
-            vec = {w: tf[w] * idf.get(w, 1) for w in tf}
-            vectors.append(vec)
-
-        all_terms = sorted(idf.keys())
-        return vectors, all_terms
+        from nlp_utils import pure_python_tfidf
+        return pure_python_tfidf(texts)
 
     def _tokenize(self, text: str) -> List[str]:
         """分词：字母词 + CJK 二元组。"""
-        tokens = []
-        text_lower = text.lower()
-        # 英文/数字词
-        for word in re.findall(r'[a-z_+#.0-9]+', text_lower):
-            if len(word) >= 2:
-                tokens.append(word)
-        # CJK 二元组
-        cjk_seq = re.findall(r'[\u4e00-\u9fff]+', text)
-        for seq in cjk_seq:
-            for i in range(len(seq) - 1):
-                tokens.append(seq[i:i + 2])
-        return tokens
+        from nlp_utils import tokenize
+        return tokenize(text)
 
     def _cosine_similarity(self, vec_a: Dict[str, float],
                            vec_b: Dict[str, float]) -> float:
         """余弦相似度。"""
-        intersection = set(vec_a) & set(vec_b)
-        if not intersection:
-            return 0.0
-        dot = sum(vec_a[k] * vec_b[k] for k in intersection)
-        norm_a = math.sqrt(sum(v * v for v in vec_a.values()))
-        norm_b = math.sqrt(sum(v * v for v in vec_b.values()))
-        if norm_a == 0 or norm_b == 0:
-            return 0.0
-        return dot / (norm_a * norm_b)
+        from nlp_utils import cosine_similarity
+        return cosine_similarity(vec_a, vec_b)
 
     def _max_similarity(self, query: str, titles: List[str]) -> float:
         """计算查询与所有规则标题的最大余弦相似度。"""

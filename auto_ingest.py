@@ -561,7 +561,7 @@ class ConfidenceAdjuster:
                 try:
                     feedback = self.storage.get_ai_feedback(rule.id)
                     if feedback:
-                        last_fb = max(datetime.fromisoformat(f["timestamp"]) for f in feedback if f.get("timestamp"))
+                        last_fb = max(datetime.fromisoformat(f.get("created_at", f.get("timestamp"))) for f in feedback if f.get("created_at") or f.get("timestamp"))
                         if (now - last_fb).days < self.decay_days:
                             continue
                 except Exception:

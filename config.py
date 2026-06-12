@@ -57,6 +57,7 @@ DEFAULTS: Dict[str, Dict[str, Any]] = {
     },
     "security": {
         "api_key_required": False,
+        "api_key": "",
         "rate_limit_per_min": 1000,
     },
 
@@ -150,6 +151,7 @@ ENV_MAP = {
     "RULES_CACHE_MAX_SIZE_MB": ("cache", "max_size_mb", int),
     "RULES_CACHE_PREHEAT_ON_START": ("cache", "preheat_on_start", bool),
     "RULES_SECURITY_API_KEY_REQUIRED": ("security", "api_key_required", bool),
+    "RULES_SECURITY_API_KEY": ("security", "api_key", str),
     "RULES_SECURITY_RATE_LIMIT_PER_MIN": ("security", "rate_limit_per_min", int),
 }
 

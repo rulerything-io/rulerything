@@ -87,6 +87,7 @@ class Strategy:
         self.snapshot = config.get("snapshot", False)
         self.schedule = config.get("schedule")
         self.cooldown_hours = config.get("cooldown_hours", 24)
+        self.higher_is_better = config.get("higher_is_better", False)
         self.trigger_fn: Optional[Callable] = None
         self.actions: List[Tuple[str, Callable]] = []
         self.validations: List[Tuple[str, Callable]] = []
@@ -240,6 +241,7 @@ class AutoEvolver:
             "risk": "medium",
             "snapshot": True,
             "cooldown_hours": idx_cfg.get("cooldown_hours", 24),
+            "higher_is_better": False,  # 延迟越低越好
         })
         s1.trigger_fn = lambda m: m.get("avg_latency_ms", 0) > idx_cfg.get("latency_threshold_ms", 100)
         s1.actions = [
@@ -258,6 +260,7 @@ class AutoEvolver:
             "snapshot": True,
             "schedule": qc_cfg.get("schedule", "03:00"),
             "cooldown_hours": 23,
+            "higher_is_better": True,  # 健康分越高越好
         })
         s2.actions = [
             ("health_scan", self._action_health_scan),
@@ -274,6 +277,7 @@ class AutoEvolver:
             "risk": "low",
             "snapshot": False,
             "cooldown_hours": cache_cfg.get("cooldown_hours", 4),
+            "higher_is_better": True,  # 缓存命中率越高越好
         })
         s3.trigger_fn = lambda m: m.get("cache_hit_rate", 100) < cache_cfg.get("hit_rate_threshold", 40)
         s3.actions = [
@@ -365,8 +369,11 @@ class AutoEvolver:
 
         # 计算 Cohen's d 统计验证（用于量化策略效果）
         d = cohens_d(strategy._before_metrics, strategy._after_metrics)
-        if d < -0.5 and self.logger:
-            self.logger.info("auto_evolver", f"策略 {strategy.name} 显著退化 (d={d:.3f})")
+        # 根据指标方向判断：d > 0.5 表示退化（higher_is_better=False 时），
+        # d < -0.5 表示退化（higher_is_better=True 时的反向退化）
+        degraded = (d > 0.5 and not strategy.higher_is_better) or (d < -0.5 and strategy.higher_is_better)
+        if degraded and self.logger:
+            self.logger.warn("auto_evolver", f"策略 {strategy.name} 表现退化 (d={d:.3f})")
 
         # 验证
         if error_msg:
