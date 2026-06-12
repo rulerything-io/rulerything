@@ -1,0 +1,33 @@
+[project]
+name = "rulerything"
+version = "1.1.0"
+description = "自进化规则知识库系统 — 作为大语言模型确定性副脑的知识规则系统"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.136.0",
+    "uvicorn[standard]>=0.30.0",
+    "pydantic>=2.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["rulerything*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
