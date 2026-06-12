@@ -9,3 +9,11 @@ logs/
 *.bundle
 data.backup.*
 config.yaml.backup.*
+data/snapshots/
+data/.jsonl_backup/
+data/archived/
+
+# Internal documents (not for open source)
+3.0优化方案.md
+3.0方案审查.md
+phase_c_design.md
