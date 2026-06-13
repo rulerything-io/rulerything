@@ -347,6 +347,12 @@ class EvolutionEngine:
                 f"v{rule.version}: {evo_type.value} — {trigger_reason}"
             )
 
+            # v4.0: 内容演化时保留 value_vector（内容变更 ≠ 价值观改变）
+            # 但如果来源是 "propagated"，降低 confidence（传播不可靠）
+            value_source = getattr(rule, 'value_source', 'default')
+            if value_source == 'propagated':
+                rule.value_confidence = getattr(rule, 'value_confidence', 0.5) * 0.7
+
             if self.logger:
                 self.logger.evolution(
                     rule_id=rule.id,

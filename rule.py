@@ -19,8 +19,17 @@
 
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
-from typing import List, Optional
+from typing import Dict, List, Optional
 import hashlib
+
+
+def _default_value_vector() -> Dict[str, float]:
+    """返回所有注册维度的默认值。内联此函数避免 import 循环。"""
+    return {
+        "efficiency": 0.5, "correctness": 0.5, "security": 0.5,
+        "simplicity": 0.5, "compatibility": 0.5, "testability": 0.5,
+        "documentation": 0.5,
+    }
 
 
 @dataclass
@@ -59,6 +68,14 @@ class Rule:
 
     # v1.1.0 语言标签
     lang: str = "zh"  # zh | en | ja | ...
+
+    # ===== 4.0 新增：价值层 =====
+    value_vector: Dict[str, float] = field(default_factory=_default_value_vector)
+    value_confidence: float = 0.5        # 价值标注置信度（仅用于传播门槛，不参与排序）
+    value_source: str = "default"        # default | bootstrapped | manual | propagated
+    # 注意："learned" 不会出现在 value_source 中。学习引擎修改 profile.weights，
+    # 不修改 rule.value_vector。规则的价值是静态的，用户偏好是动态的。
+    value_provenance: Optional[str] = None  # 溯源信息（传播批次 ID，用于回滚）
 
     def __post_init__(self):
         if self.created_at is None:
@@ -118,6 +135,22 @@ class Rule:
                 d["tags"] = _json.loads(tags)
             except (_json.JSONDecodeError, TypeError):
                 d["tags"] = []
+        # 兼容 v4.0：value_vector 可能是 JSON 字符串（来自 SQLite TEXT 存储）
+        vv = d.get("value_vector")
+        if isinstance(vv, str):
+            import json as _json
+            try:
+                d["value_vector"] = _json.loads(vv)
+            except (_json.JSONDecodeError, TypeError):
+                d["value_vector"] = _default_value_vector()
+        # 兼容旧数据：无 value 字段时使用默认值
+        if "value_vector" not in d or not d.get("value_vector"):
+            d["value_vector"] = _default_value_vector()
+        if "value_confidence" not in d:
+            d["value_confidence"] = 0.5
+        if "value_source" not in d:
+            d["value_source"] = "default"
+        # value_provenance is Optional, None is fine
         return cls(**d)
 
     def record_hit(self):

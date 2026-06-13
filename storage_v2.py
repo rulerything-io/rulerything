@@ -333,6 +333,9 @@ class RuleStorageV2(ProposalMixin, AIMixin, LogMixin):
             except Exception as e:
                 logging.warning("rules_cold 表 lang 列迁移失败: %s", e)
 
+            # v4.0 迁移：value 相关字段 + profiles 表
+            self._migrate_v3_to_v4(conn)
+
     def _connect(self) -> sqlite3.Connection:
         """创建新的数据库连接（线程安全）。"""
         conn = sqlite3.connect(str(self.db_path), timeout=10)
@@ -341,6 +344,99 @@ class RuleStorageV2(ProposalMixin, AIMixin, LogMixin):
         if current_mode != "WAL":
             conn.execute("PRAGMA journal_mode=WAL")
         return conn
+
+    # ── v3 → v4 迁移 ────────────────────────────────────
+
+    def _get_schema_version(self, conn: sqlite3.Connection) -> int:
+        """获取当前 schema 版本号。"""
+        try:
+            row = conn.execute(
+                "SELECT MAX(version) FROM schema_version"
+            ).fetchone()
+            return row[0] if row and row[0] else 0
+        except Exception:
+            return 0
+
+    def _migrate_v3_to_v4(self, conn: sqlite3.Connection):
+        """安全迁移 v3 → v4：检查 → 备份 → 迁移 → 验证。"""
+        current = self._get_schema_version(conn)
+        if current >= 4:
+            return  # 已迁移
+
+        # 自动备份（时间戳命名，每次迁移前新建，不覆盖旧备份）
+        import shutil
+        import time as _time
+        backup_path = self.db_path.with_suffix(f".db.v3-backup-{int(_time.time())}")
+        try:
+            shutil.copy2(self.db_path, backup_path)
+        except Exception:
+            pass  # 备份非致命
+        # 保留最近 5 份备份，删除更旧的
+        backups = sorted(
+            self.db_path.parent.glob(f"{self.db_path.name}.v3-backup-*"),
+            key=lambda p: p.stat().st_mtime,
+        )
+        for old in backups[:-5]:
+            try:
+                old.unlink()
+            except Exception:
+                pass
+
+        # 检查列是否已存在（支持断点续迁）
+        existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(rules)")}
+        migrations = [
+            ("value_vector", "TEXT DEFAULT '{}'"),
+            ("value_confidence", "REAL DEFAULT 0.5"),
+            ("value_source", "TEXT DEFAULT 'default'"),
+            ("value_provenance", "TEXT DEFAULT NULL"),
+        ]
+        for col_name, col_def in migrations:
+            if col_name not in existing_cols:
+                try:
+                    conn.execute(f"ALTER TABLE rules ADD COLUMN {col_name} {col_def}")
+                except Exception as e:
+                    logging.warning(f"迁移添加列 {col_name} 失败: {e}")
+
+        # 为 rules_cold 表同样添加（保持结构一致）
+        cold_cols = {row[1] for row in conn.execute("PRAGMA table_info(rules_cold)")}
+        for col_name, col_def in migrations:
+            if col_name not in cold_cols:
+                try:
+                    conn.execute(f"ALTER TABLE rules_cold ADD COLUMN {col_name} {col_def}")
+                except Exception as e:
+                    logging.warning(f"迁移 rules_cold 添加列 {col_name} 失败: {e}")
+
+        # 创建 profiles 表
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS profiles ("
+            "  name TEXT PRIMARY KEY,"
+            "  data TEXT NOT NULL,"
+            "  created_at TEXT DEFAULT (datetime('now'))"
+            ")"
+        )
+
+        # 创建 shadow_comparison_log 表
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS shadow_comparison_log ("
+            "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            "  timestamp TEXT DEFAULT (datetime('now')),"
+            "  query TEXT,"
+            "  profile TEXT,"
+            "  v3_top5 TEXT,"
+            "  v4_top5 TEXT,"
+            "  order_changed INTEGER"
+            ")"
+        )
+
+        # 创建 schema_version 表并记录版本（支持多次迁移合并）
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS schema_version ("
+            "  version INTEGER PRIMARY KEY,"
+            "  applied_at TEXT DEFAULT (datetime('now'))"
+            ")"
+        )
+        conn.execute("INSERT OR REPLACE INTO schema_version (version) VALUES (4)")
+        logging.info("v3→v4 迁移完成: 已添加 value_vector/value_confidence/value_source/value_provenance, profiles 表")
 
     # ── 内部工具 ────────────────────────────────────────
 
@@ -354,6 +450,13 @@ class RuleStorageV2(ProposalMixin, AIMixin, LogMixin):
                     d[field] = json.loads(d[field])
                 except (json.JSONDecodeError, TypeError):
                     d[field] = [] if field == "tags" else []
+        # JSON 字符串→字典（v4.0 value_vector）
+        vv = d.get("value_vector")
+        if isinstance(vv, str):
+            try:
+                d["value_vector"] = json.loads(vv)
+            except (json.JSONDecodeError, TypeError):
+                d["value_vector"] = None
         # datetime 字段
         for field in ("created_at", "last_hit", "expires_at", "last_ai_review"):
             if isinstance(d.get(field), str):
@@ -375,6 +478,9 @@ class RuleStorageV2(ProposalMixin, AIMixin, LogMixin):
         for field in ("tags", "evolution_log"):
             if isinstance(d.get(field), list):
                 d[field] = json.dumps(d[field], ensure_ascii=False)
+        # 字典→JSON 字符串（v4.0 value_vector）
+        if isinstance(d.get("value_vector"), dict):
+            d["value_vector"] = json.dumps(d["value_vector"], ensure_ascii=False)
         return d
 
     # ── CRUD ────────────────────────────────────────────
@@ -441,6 +547,7 @@ class RuleStorageV2(ProposalMixin, AIMixin, LogMixin):
         "title", "content", "category", "tags", "confidence", "hit_count",
         "last_hit", "version", "lang", "verifier", "parent_id", "duplicate_of",
         "evolution_log", "expires_at", "ai_verified", "last_ai_review",
+        "value_vector", "value_confidence", "value_source", "value_provenance",
     })
 
     def update(self, rule_id: str, **kwargs) -> bool:
@@ -862,6 +969,85 @@ class RuleStorageV2(ProposalMixin, AIMixin, LogMixin):
         while len(snapshots) > max_keep:
             oldest = snapshots.pop(0)
             oldest.unlink(missing_ok=True)
+
+    # ── v4.0 画像持久化 ─────────────────────────────────
+
+    def save_profile(self, profile) -> bool:
+        """持久化 ValueProfile 到 profiles 表。"""
+        import json as _json
+        from dataclasses import asdict
+        with self._lock:
+            try:
+                with self._connect() as conn:
+                    # 序列化 profile（排除 _lock 等不可序列化字段）
+                    p_dict = {
+                        "name": profile.name,
+                        "weights": profile.weights,
+                        "priority_order": profile.priority_order,
+                        "conflict_strategy": profile.conflict_strategy,
+                        "created_at": profile.created_at.isoformat() if hasattr(profile.created_at, 'isoformat') else str(profile.created_at),
+                        "updated_at": profile.updated_at.isoformat() if hasattr(profile.updated_at, 'isoformat') else str(profile.updated_at),
+                        "learn_count": profile.learn_count,
+                        "_last_dimension_hit": getattr(profile, '_last_dimension_hit', {}),
+                    }
+                    data = _json.dumps(p_dict, ensure_ascii=False)
+                    conn.execute(
+                        "INSERT OR REPLACE INTO profiles (name, data) VALUES (?, ?)",
+                        (profile.name, data),
+                    )
+                return True
+            except Exception:
+                return False
+
+    def list_profiles(self):
+        """从 profiles 表加载所有持久化的 ValueProfile。"""
+        from value.profile import ValueProfile
+        import json as _json
+        with self._lock:
+            try:
+                with self._connect() as conn:
+                    rows = conn.execute("SELECT data FROM profiles").fetchall()
+                profiles = []
+                for row in rows:
+                    try:
+                        data = _json.loads(row["data"])
+                        p = ValueProfile(
+                            name=data["name"],
+                            weights=data.get("weights", {}),
+                            priority_order=data.get("priority_order", []),
+                            conflict_strategy=data.get("conflict_strategy", "weighted_vote"),
+                            learn_count=data.get("learn_count", 0),
+                        )
+                        p._last_dimension_hit = data.get("_last_dimension_hit", {})
+                        p.ensure_weights()
+                        profiles.append(p)
+                    except Exception:
+                        continue
+                return profiles
+            except Exception:
+                return []
+
+    # ── v4.0 Shadow 对比日志 ─────────────────────────────
+
+    def log_shadow_comparison(self, diff: dict):
+        """记录 shadow 模式下的排序对比结果。"""
+        import json as _json
+        with self._lock:
+            try:
+                with self._connect() as conn:
+                    conn.execute(
+                        "INSERT INTO shadow_comparison_log (query, profile, v3_top5, v4_top5, order_changed) "
+                        "VALUES (?, ?, ?, ?, ?)",
+                        (
+                            diff.get("query", "")[:100],
+                            diff.get("profile", ""),
+                            _json.dumps(diff.get("v3_top5", []), ensure_ascii=False),
+                            _json.dumps(diff.get("v4_top5", []), ensure_ascii=False),
+                            1 if diff.get("order_changed") else 0,
+                        ),
+                    )
+            except Exception:
+                pass
 
     # ── 统计 ────────────────────────────────────────────
 

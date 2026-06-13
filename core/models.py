@@ -2,7 +2,7 @@
 Rulerything — Pydantic 请求/响应模型
 """
 
-from typing import Optional, List
+from typing import Dict, Optional, List, Any
 from pydantic import BaseModel
 
 
@@ -12,6 +12,10 @@ class SearchRequest(BaseModel):
     category: str = "all"
     lang: Optional[str] = None  # 语言过滤: zh | en | ja | ...
     user_feedback: Optional[bool] = None
+    profile: Optional[str] = None        # v4.0 价值画像名称
+    brief: bool = False                  # v4.0 简短决策追溯
+    selected_rule_id: Optional[str] = None  # v4.0 用户采纳的规则 ID
+    session_id: Optional[str] = None     # v4.0 session 标识（灰度分配/A/B 测试）
 
 
 class SearchResult(BaseModel):
@@ -22,6 +26,11 @@ class SearchResult(BaseModel):
     category: str
     tags: list
     lang: str = "zh"
+    # v4.0 价值层字段（仅在 value.enabled=true 时返回）
+    value_vector: Optional[Dict[str, float]] = None
+    value_confidence: Optional[float] = None
+    value_source: Optional[str] = None
+    value_provenance: Optional[str] = None
 
 
 class SearchResponse(BaseModel):
@@ -31,6 +40,8 @@ class SearchResponse(BaseModel):
     latency_ms: float
     ai_delegated: bool = False
     ai_query_id: str = ""
+    # v4.0 决策追溯链
+    decision_trace: Optional[Dict[str, Any]] = None
 
 
 class AddRuleRequest(BaseModel):

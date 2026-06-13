@@ -68,6 +68,105 @@ semantic_search:
   backend: bm25
 
 # ═══════════════════════════════════════════════════
+# v4.0 价值层配置
+# ═══════════════════════════════════════════════════
+
+value:
+  # ===== 全局开关 =====
+  enabled: true
+
+  # ===== 部署模式 =====
+  # off | shadow | dual_write | grayscale | full
+  mode: "full"
+
+  # ===== 默认画像 =====
+  default_profile: "default"
+
+  # ===== 预定义画像 =====
+  profiles:
+    default:
+      weights:
+        efficiency: 0.5
+        correctness: 0.7
+        security: 0.8
+        simplicity: 0.4
+        compatibility: 0.5
+        testability: 0.5
+        documentation: 0.5
+      conflict_strategy: "weighted_vote"
+      priority_order: []
+
+    security_first:
+      weights:
+        security: 0.95
+        correctness: 0.7
+        simplicity: 0.3
+        efficiency: 0.3
+        compatibility: 0.5
+        testability: 0.6
+        documentation: 0.6
+      conflict_strategy: "lexicographic"
+      priority_order: ["security", "correctness"]
+
+    performance_first:
+      weights:
+        efficiency: 0.95
+        correctness: 0.5
+        security: 0.4
+        simplicity: 0.6
+        compatibility: 0.4
+        testability: 0.5
+        documentation: 0.3
+      conflict_strategy: "weighted_vote"
+      priority_order: []
+
+  # ===== 隐式学习配置 =====
+  learning:
+    enabled: true
+    min_feedback_for_adapt: 1
+    learning_rate: 0.05
+    decay_half_life: 86400
+    optimistic_init: true
+    exploration_epsilon: 0.10
+
+  # ===== 价值传播配置 =====
+  propagation:
+    enabled: true
+    similarity_threshold: 0.6
+    max_propagate: 5
+    min_source_confidence: 0.7
+
+  # ===== 决策追溯 =====
+  decision_trace:
+    enabled: true
+    max_alternatives: 3
+    include_scores: true
+    brief_mode: false
+
+  # ===== A/B 测试配置 =====
+  ab_test:
+    enabled: false
+    default_duration_hours: 168
+
+  # ===== 灰度配置 =====
+  grayscale:
+    percent: 5
+    ramp_schedule:
+      - { hours: 24, percent: 20 }
+      - { hours: 48, percent: 50 }
+      - { hours: 72, percent: 100 }
+    session_ttl_hours: 24
+
+  # ===== 自动回滚触发条件 =====
+  auto_rollback:
+    enabled: true
+    error_rate_threshold: 2.0
+    p99_latency_threshold: 1.5
+    baseline_window_hours: 24
+    check_interval_minutes: 5
+    rollback_to_mode: "off"
+
+# ═══════════════════════════════════════════════════
 # v3.0 自适应规则系统配置
 # ═══════════════════════════════════════════════════
 

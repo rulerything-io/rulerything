@@ -8,6 +8,7 @@ from routes.rules import router as rules_router
 from routes.v3 import router as v3_router
 from routes.ai import router as ai_router
 from routes.phase3 import router as phase3_router
+from routes.value import router as value_router
 
 
 def register_routes(app: FastAPI):
@@ -18,3 +19,4 @@ def register_routes(app: FastAPI):
     app.include_router(v3_router)
     app.include_router(ai_router)
     app.include_router(phase3_router)
+    app.include_router(value_router)

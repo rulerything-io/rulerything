@@ -134,6 +134,83 @@ DEFAULTS: Dict[str, Dict[str, Any]] = {
             "ai_call": 30,
         },
     },
+
+    # v4.0 默认配置
+    "value": {
+        "enabled": False,
+        "mode": "off",
+        "default_profile": "default",
+        "profiles": {
+            "default": {
+                "weights": {
+                    "efficiency": 0.5, "correctness": 0.7, "security": 0.8,
+                    "simplicity": 0.4, "compatibility": 0.5,
+                    "testability": 0.5, "documentation": 0.5,
+                },
+                "conflict_strategy": "weighted_vote",
+                "priority_order": [],
+            },
+            "security_first": {
+                "weights": {
+                    "security": 0.95, "correctness": 0.7, "simplicity": 0.3,
+                    "efficiency": 0.3, "compatibility": 0.5,
+                    "testability": 0.6, "documentation": 0.6,
+                },
+                "conflict_strategy": "lexicographic",
+                "priority_order": ["security", "correctness"],
+            },
+            "performance_first": {
+                "weights": {
+                    "efficiency": 0.95, "correctness": 0.5, "security": 0.4,
+                    "simplicity": 0.6, "compatibility": 0.4,
+                    "testability": 0.5, "documentation": 0.3,
+                },
+                "conflict_strategy": "weighted_vote",
+                "priority_order": [],
+            },
+        },
+        "learning": {
+            "enabled": True,
+            "min_feedback_for_adapt": 1,
+            "learning_rate": 0.05,
+            "decay_half_life": 86400,
+            "optimistic_init": True,
+            "exploration_epsilon": 0.10,
+        },
+        "propagation": {
+            "enabled": True,
+            "similarity_threshold": 0.6,
+            "max_propagate": 5,
+            "min_source_confidence": 0.7,
+        },
+        "decision_trace": {
+            "enabled": True,
+            "max_alternatives": 3,
+            "include_scores": True,
+            "brief_mode": False,
+        },
+        "ab_test": {
+            "enabled": False,
+            "default_duration_hours": 168,
+        },
+        "grayscale": {
+            "percent": 5,
+            "ramp_schedule": [
+                {"hours": 24, "percent": 20},
+                {"hours": 48, "percent": 50},
+                {"hours": 72, "percent": 100},
+            ],
+            "session_ttl_hours": 24,
+        },
+        "auto_rollback": {
+            "enabled": True,
+            "error_rate_threshold": 2.0,
+            "p99_latency_threshold": 1.5,
+            "baseline_window_hours": 24,
+            "check_interval_minutes": 5,
+            "rollback_to_mode": "off",
+        },
+    },
 }
 
 # 环境变量映射：RULES_{SECTION}_{KEY} → (section, key, type)

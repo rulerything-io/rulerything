@@ -135,6 +135,9 @@ def bootstrap():
         except Exception as e:
             state.logger.info("v3", f"启动自检异常: {e}")
 
+    # ── v4.0 价值层初始化 ─────────────────────────────────
+    _init_value_layer()
+
     # ── 启动管理循环 ────────────────────────────────────
     if state.config.get("v3", {}).get("enabled", False):
         state._stop_event = threading.Event()
@@ -144,6 +147,38 @@ def bootstrap():
         state.logger.info("v3", "Phase B 管理循环已启动 (60s tick)")
 
     return state
+
+
+def _init_value_layer():
+    """初始化 v4.0 价值层（懒加载，enabled=false 时跳过）。"""
+    value_cfg = state.config.get("value", {})
+    if not value_cfg.get("enabled", False):
+        state.logger.info("v4", "价值层未启用 (value.enabled=false)")
+        state.value_engine = None
+        state.mode_engine = None
+        state.shadow_engine = None
+        return
+
+    # 初始化模式引擎
+    from value.mode_engine import ModeEngine
+    state.mode_engine = ModeEngine(value_cfg, state.storage_v2)
+
+    # 初始化价值引擎（懒加载，首次调用时触发子模块导入）
+    from value import get_value_engine
+    state.value_engine = get_value_engine(state.config, state.storage_v2)
+
+    if state.value_engine:
+        # 启动衰减定时器
+        state.value_engine.decay_timer.start()
+        state.logger.info("v4",
+                          f"价值引擎已初始化: {len(state.value_engine.profiles)} 个画像, "
+                          f"mode={value_cfg.get('mode', 'off')}")
+
+    # 影子/双写模式初始化
+    if state.mode_engine and state.mode_engine.mode.value in ("shadow", "dual_write"):
+        from value.shadow import ShadowEngine
+        state.shadow_engine = ShadowEngine(state.value_engine, state.storage_v2)
+        state.logger.info("v4", f"影子引擎已初始化 (mode={state.mode_engine.mode.value})")
 
 
 def _init_v3_modules():

@@ -1,5 +1,5 @@
 """
-Rulerything — 搜索 / 预热路由
+Rulerything — 搜索 / 预热路由（v4.0 集成）
 """
 
 import time
@@ -14,26 +14,147 @@ from core.auth import require_write_token
 from core.models import SearchRequest, SearchResult, SearchResponse
 from rule import Rule
 
+# v4.0 模块（延迟导入）
+from value.mode_engine import DeployMode
+
 router = APIRouter()
+
+
+def _filter_value_fields(result_dict: dict, value_enabled: bool) -> dict:
+    """
+    当 value.enabled=false 时，从响应中移除所有 value_* 字段和 decision_trace。
+    确保 3.0 客户端看到的响应与升级前完全一致。
+    """
+    if not value_enabled:
+        result_dict.pop("decision_trace", None)
+        for item in result_dict.get("results", []):
+            item.pop("value_vector", None)
+            item.pop("value_confidence", None)
+            item.pop("value_source", None)
+            item.pop("value_provenance", None)
+    return result_dict
+
+
+async def _collect_learning_signals(
+    query: str,
+    results: list,
+    selected_rule_id: Optional[str],  # 用户采纳的规则（前端回传）
+    value_engine,
+    profile,
+):
+    """搜索结果返回后自动采集隐式学习信号。"""
+    if value_engine is None or not value_engine.learning.enabled:
+        return
+    if profile is None:
+        return
+
+    top3 = results[:3]
+
+    if selected_rule_id:
+        # 被采纳的规则 → POSITIVE
+        for r in results:
+            if r.id == selected_rule_id:
+                value_engine.learning.learn_from_feedback(
+                    profile, r.value_vector, value_engine.Signal.POSITIVE
+                )
+                break
+        # 前 3 中未被采纳 → IMPLICIT_NEGATIVE
+        for r in top3:
+            if r.id != selected_rule_id:
+                value_engine.learning.learn_from_feedback(
+                    profile, r.value_vector, value_engine.Signal.IMPLICIT_NEGATIVE
+                )
 
 
 @router.post("/search", response_model=SearchResponse)
 async def search(req: SearchRequest):
     """搜索规则。"""
     start = time.perf_counter()
+    value_engine = state.value_engine
+    mode_engine = state.mode_engine
+    profile = None  # 提前声明，避免条件分支未定义
 
-    results = state.index.search(
-        query=req.query,
-        search_type=req.search_type,
-        category=None if req.category == "all" else req.category,
-        lang=req.lang,
-        limit=10,
-    )
+    # ── 1. 确定模式 ────────────────────────────────
+    session_id = req.session_id or getattr(req, 'session_id', None)
+    if mode_engine:
+        use_value_sorting, should_collect = mode_engine.should_use_value_engine(session_id)
+    else:
+        use_value_sorting, should_collect = False, False
+
+    # ── 2. 执行搜索 ──────────────────────────────────
+    if use_value_sorting and value_engine:
+        # 4.0 路径：价值排序 + 决策追溯
+        profile = value_engine.get_profile(req.profile)
+        if profile is None:
+            # 回退到 3.0 路径
+            results = state.index.search(
+                query=req.query,
+                search_type=req.search_type,
+                category=None if req.category == "all" else req.category,
+                lang=req.lang,
+                limit=10,
+            )
+            trace = None
+        else:
+            raw_results = state.index.search(
+                query=req.query,
+                search_type=req.search_type,
+                category=None if req.category == "all" else req.category,
+                lang=req.lang,
+                limit=50,  # 取更多候选供价值排序
+            )
+            sorted_results = value_engine.sort_rules(raw_results, profile)
+            explored = value_engine.maybe_explore(
+                sorted_results, value_engine.learning.exploration_epsilon
+            )
+
+            # 冲突检测（前 50 条候选）
+            resolved_conflicts = []
+            if len(explored) >= 2:
+                conflicts = value_engine.detect_conflicts(
+                    explored[0].value_vector, explored[1].value_vector
+                )
+                if conflicts:
+                    resolved_conflicts = value_engine.resolve_conflicts(
+                        conflicts, profile, explored[0].id, explored[1].id,
+                        rule_a_value=explored[0].value_vector,
+                        rule_b_value=explored[1].value_vector,
+                    )
+
+            trace = None
+            if explored:
+                trace = value_engine.generate_decision_trace(
+                    explored[0], explored, profile, resolved_conflicts,
+                    brief=req.brief,
+                )
+            results = explored
+    else:
+        # 3.0 路径
+        results = state.index.search(
+            query=req.query,
+            search_type=req.search_type,
+            category=None if req.category == "all" else req.category,
+            lang=req.lang,
+            limit=10,
+        )
+        trace = None
+
+        # Shadow/Dual-write：静默运行 4.0 排序
+        if mode_engine and mode_engine.mode in (DeployMode.SHADOW, DeployMode.DUAL_WRITE):
+            if value_engine and state.shadow_engine:
+                profile = value_engine.get_profile("default")
+                if profile:
+                    v4_sorted = value_engine.sort_rules(list(results), profile)
+                    state.shadow_engine.compare_and_log(
+                        req.query, [r.id for r in results],
+                        [r.id for r in v4_sorted], profile.name
+                    )
 
     latency_ms = (time.perf_counter() - start) * 1000
-    state.index.record_latency(latency_ms)
+    if hasattr(state.index, 'record_latency'):
+        state.index.record_latency(latency_ms)
 
-    # v3.0 查询日志（含 result_ids 用于 dep_miner 共现分析）
+    # v3.0 查询日志
     if state.storage_v2:
         try:
             state.storage_v2.log_query(
@@ -52,13 +173,14 @@ async def search(req: SearchRequest):
         user_feedback=req.user_feedback,
     )
 
-    # 熵引擎记录查询（Phase 1）
-    state.entropy_engine.record_query(
-        query=req.query,
-        result_ids=[r.id for r in results],
-        latency_ms=latency_ms,
-        cache_hit=latency_ms < 1.0,
-    )
+    # 熵引擎记录查询
+    if state.entropy_engine:
+        state.entropy_engine.record_query(
+            query=req.query,
+            result_ids=[r.id for r in results],
+            latency_ms=latency_ms,
+            cache_hit=latency_ms < 1.0,
+        )
 
     # 收集反馈
     if req.user_feedback is not None and results:
@@ -95,12 +217,27 @@ async def search(req: SearchRequest):
         except Exception:
             state.logger.warn("search", "AI 兜底调用失败")
 
-    return SearchResponse(
+    # ── 3. 采集学习信号 ──────────────────────────────
+    if should_collect and value_engine and profile is not None:
+        await _collect_learning_signals(
+            req.query, results, req.selected_rule_id, value_engine, profile
+        )
+
+    # ── 4. 监控指标 ──────────────────────────────
+    if mode_engine:
+        mode_engine.record_result(is_error=False, latency_ms=latency_ms)
+
+    # ── 5. 构建响应 ──────────────────────────────
+    response = SearchResponse(
         results=[
             SearchResult(
                 title=r.title, content=r.content, id=r.id,
                 confidence=r.confidence, category=r.category, tags=r.tags,
                 lang=r.lang,
+                value_vector=getattr(r, 'value_vector', None),
+                value_confidence=getattr(r, 'value_confidence', None),
+                value_source=getattr(r, 'value_source', None),
+                value_provenance=getattr(r, 'value_provenance', None),
             )
             for r in results[:5]
         ],
@@ -109,7 +246,25 @@ async def search(req: SearchRequest):
         latency_ms=round(latency_ms, 2),
         ai_delegated=ai_delegated,
         ai_query_id=ai_query_id,
+        decision_trace=trace,
     )
+
+    # 当 use_value_sorting 为 False 时，过滤 value 字段
+    if not use_value_sorting:
+        response = _filter_value_fields(response.model_dump(), value_enabled=False)
+        response = SearchResponse(**response)
+
+    # ── 6. 自动回滚检查 ──────────────────────────────
+    if mode_engine:
+        should_rollback, reason = mode_engine.should_auto_rollback()
+        if should_rollback:
+            state.logger.info("v4", f"[AutoRollback] 触发自动回滚: {reason}")
+            from value.mode_engine import DeployMode
+            rollback_to = mode_engine.rollback_config.get("rollback_to_mode", "off")
+            mode_engine.mode = DeployMode(rollback_to)
+            state.logger.info("v4", f"已自动回滚到模式: {rollback_to}")
+
+    return response
 
 
 @router.post("/warmup")

@@ -41,6 +41,11 @@ class AppState:
     immune_system = None
     adaptive_system = None
 
+    # ── v4.0 价值层 ─────────────────────────────────────
+    value_engine = None          # ValueEngine 实例
+    mode_engine = None           # ModeEngine 实例
+    shadow_engine = None         # ShadowEngine 实例（影子/双写模式）
+
     # ── 运行时状态 ──────────────────────────────────────
     _start_time: datetime = None
     _management_heartbeat: Optional[str] = None
