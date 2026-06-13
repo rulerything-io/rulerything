@@ -63,7 +63,7 @@ class AppState:
             self.storage_v2.set_config("ai_bridge_config",
                                        json.dumps(ai_config, ensure_ascii=False))
         except Exception:
-            pass
+            self.logger.warn("system", "AI 配置保存失败")
 
     def load_ai_config(self) -> dict:
         """从运行时存储加载 AI 配置覆盖。"""

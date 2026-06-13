@@ -34,6 +34,7 @@ AutoEvolver — 自动演化引擎（v3.0 Phase C）
 
 import time
 import math
+import logging
 from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -363,6 +364,7 @@ class AutoEvolver:
                 after_metrics = self.metrics_fn()
                 strategy.record_after(after_metrics.get(metric_key, 0))
             except Exception:
+                logging.warning("auto_evolver: 重新读取执行后指标失败，使用原始值")
                 strategy.record_after(metrics.get(metric_key, 0))
         else:
             strategy.record_after(metrics.get(metric_key, 0))
@@ -408,6 +410,7 @@ class AutoEvolver:
                 error_message=error_msg,
             )
         except Exception:
+            logging.warning("auto_evolver: 记录策略回滚操作失败")
             pass
 
         return {

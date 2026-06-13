@@ -38,21 +38,19 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Callable
 
 from rule import Rule
+from core.utils import _iso_now
 
 # v1.1.0 拆分 — AI 功能和日志功能移至独立 mixin 模块
 from storage_v2_ai import AIMixin
 from storage_v2_log import LogMixin
+from storage_v2_proposal import ProposalMixin
 
 DB_FILENAME = "rules.db"
 SNAPSHOT_DIR_NAME = "snapshots"
 QUERY_LOG_RETENTION_DAYS = 56  # 8 周轮换
 
 
-def _iso_now() -> str:
-    return datetime.now().isoformat()
-
-
-class RuleStorageV2(AIMixin, LogMixin):
+class RuleStorageV2(ProposalMixin, AIMixin, LogMixin):
     """基于 SQLite 的规则存储，兼容 RuleStorage 接口。
 
     用法:
@@ -218,6 +216,10 @@ class RuleStorageV2(AIMixin, LogMixin):
                 CREATE INDEX IF NOT EXISTS idx_rules_category_content ON rules(category, content);
                 CREATE INDEX IF NOT EXISTS idx_rules_cold_last_hit ON rules_cold(last_hit);
 
+                -- 防并发重复：同分类同内容且非副本的唯一约束
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_rules_dedup
+                    ON rules(category, content) WHERE duplicate_of IS NULL;
+
                 -- 迁移：为旧数据库添加 result_ids 列
                 CREATE TABLE IF NOT EXISTS _schema_version (version INTEGER);
                 INSERT INTO _schema_version (version) VALUES (0);
@@ -378,7 +380,7 @@ class RuleStorageV2(AIMixin, LogMixin):
     # ── CRUD ────────────────────────────────────────────
 
     def add(self, rule: Rule) -> Tuple[bool, str]:
-        """添加规则（含去重检测）。"""
+        """添加规则（含原子去重检测）。"""
         with self._lock:
             try:
                 with self._connect() as conn:
@@ -389,15 +391,7 @@ class RuleStorageV2(AIMixin, LogMixin):
                     if existing:
                         return False, f"规则 {rule.id} 已存在"
 
-                    # 检查内容重复（同分类）
-                    dup = conn.execute(
-                        "SELECT id, title FROM rules WHERE category = ? AND content = ? AND duplicate_of IS NULL",
-                        (rule.category, rule.content),
-                    ).fetchone()
-                    if dup:
-                        return False, f"内容重复: 与 {dup['id']}「{dup['title']}」内容相同"
-
-                    # 写入
+                    # 写入（UNIQUE 索引防并发重复，dup 场景直接 IntegrityError）
                     d = self._rule_to_row(rule)
                     cols = ", ".join(d.keys())
                     placeholders = ", ".join("?" for _ in d)
@@ -409,6 +403,20 @@ class RuleStorageV2(AIMixin, LogMixin):
                 # 通知内存索引更新
                 self._notify_index("add", rule)
                 return True, "ok"
+
+            except sqlite3.IntegrityError as e:
+                # UNIQUE 约束冲突 → 查询具体重复条目
+                try:
+                    with self._connect() as conn2:
+                        dup = conn2.execute(
+                            "SELECT id, title FROM rules WHERE category = ? AND content = ? AND duplicate_of IS NULL",
+                            (rule.category, rule.content),
+                        ).fetchone()
+                    if dup:
+                        return False, f"内容重复: 与 {dup['id']}「{dup['title']}」内容相同"
+                    return False, f"ID 冲突或唯一约束违反: {e}"
+                except sqlite3.Error:
+                    return False, f"唯一约束违反: {e}"
 
             except sqlite3.Error as e:
                 return False, f"数据库错误: {e}"
@@ -431,7 +439,8 @@ class RuleStorageV2(AIMixin, LogMixin):
 
     ALLOWED_UPDATE_COLUMNS = frozenset({
         "title", "content", "category", "tags", "confidence", "hit_count",
-        "last_hit", "is_active", "metadata", "version", "description", "source",
+        "last_hit", "version", "lang", "verifier", "parent_id", "duplicate_of",
+        "evolution_log", "expires_at", "ai_verified", "last_ai_review",
     })
 
     def update(self, rule_id: str, **kwargs) -> bool:
@@ -710,86 +719,6 @@ class RuleStorageV2(AIMixin, LogMixin):
                 results.append({"rule_id": dup.id, "duplicate_of": master.id})
         return results
 
-    # ── 提案管理 ────────────────────────────────────────
-
-    def create_proposal(self, title: str, description: str,
-                        module: str, dedup_key: str,
-                        priority: int = 3,
-                        risk_score: float = 0.0) -> str:
-        """创建新提案，返回 proposal_id。"""
-        proposal_id = f"{module}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
-        with self._lock:
-            try:
-                with self._connect() as conn:
-                    conn.execute("""
-                        INSERT INTO proposals (id, title, description, module, dedup_key,
-                            priority, risk_score, status, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)
-                    """, (proposal_id, title, description, module, dedup_key,
-                          priority, risk_score, _iso_now()))
-                return proposal_id
-            except sqlite3.Error:
-                return ""
-
-    def get_proposal(self, proposal_id: str) -> Optional[dict]:
-        """获取提案详情。"""
-        with self._lock:
-            with self._connect() as conn:
-                conn.row_factory = sqlite3.Row
-                row = conn.execute(
-                    "SELECT * FROM proposals WHERE id = ?", (proposal_id,)
-                ).fetchone()
-        return dict(row) if row else None
-
-    def list_proposals(self, status: Optional[str] = None,
-                       module: Optional[str] = None,
-                       limit: int = 100) -> List[dict]:
-        """列出提案，可按状态/模块过滤。"""
-        with self._lock:
-            with self._connect() as conn:
-                conn.row_factory = sqlite3.Row
-                clauses = []
-                params = []
-                if status:
-                    clauses.append("status = ?")
-                    params.append(status)
-                if module:
-                    clauses.append("module = ?")
-                    params.append(module)
-                where = " AND ".join(clauses) if clauses else "1=1"
-                rows = conn.execute(
-                    f"SELECT * FROM proposals WHERE {where} ORDER BY created_at DESC LIMIT ?",
-                    params + [limit],
-                ).fetchall()
-        return [dict(r) for r in rows]
-
-    def update_proposal_status(self, proposal_id: str, status: str,
-                               **extra):
-        """更新提案状态和额外字段。"""
-        allowed_statuses = {"pending", "running", "success", "failed", "rolled_back", "cancelled"}
-        if status not in allowed_statuses:
-            return False
-        with self._lock:
-            try:
-                with self._connect() as conn:
-                    sets = ["status = ?"]
-                    vals = [status]
-                    if status in ("success", "failed", "rolled_back"):
-                        sets.append("executed_at = ?")
-                        vals.append(_iso_now())
-                    for key in ("snapshot_id", "result", "error_message"):
-                        if key in extra:
-                            sets.append(f"{key} = ?")
-                            vals.append(extra[key])
-                    vals.append(proposal_id)
-                    conn.execute(
-                        f"UPDATE proposals SET {', '.join(sets)} WHERE id = ?",
-                        vals,
-                    )
-                return True
-            except sqlite3.Error:
-                return False
-
     # ── 审计日志 ────────────────────────────────────────
 
     def log_audit(self, action: str, module: str, actor: str = "system",
@@ -844,6 +773,7 @@ class RuleStorageV2(AIMixin, LogMixin):
             try:
                 self.index_callback(action, data)
             except Exception:
+                logging.warning("storage_v2: 通知内存索引更新失败")
                 pass  # 索引更新失败不阻断存储写入
 
     def reconcile_index(self, rebuild_fn: Optional[Callable] = None) -> dict:
@@ -1042,3 +972,13 @@ class RuleStorageV2(AIMixin, LogMixin):
                     issues.append(f"发现 {neg_hits} 条规则 hit_count 为负数")
 
         return issues
+
+    def close(self):
+        """优雅关闭：刷新 WAL 并释放连接。"""
+        with self._lock:
+            try:
+                with self._connect() as conn:
+                    conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                    conn.close()
+            except Exception:
+                pass

@@ -35,6 +35,7 @@ Everything 原则：
 
 import hashlib
 import json
+import logging
 import queue
 import threading
 import time
@@ -42,10 +43,7 @@ from datetime import datetime, timedelta, date
 from typing import Any, Dict, List, Optional, Tuple
 
 from rule import Rule
-
-
-def _iso_now() -> str:
-    return datetime.now().isoformat()
+from core.utils import _iso_now
 
 
 # ── 草稿生成 ────────────────────────────────────────────
@@ -168,6 +166,7 @@ class DraftGenerator:
         try:
             rules = self.storage.list()
         except Exception:
+            logging.warning("DraftGenerator._detect_category_by_content: 无法获取规则列表，回退至 general")
             return "general"
 
         # 构建分类→高频词集（缓存到实例避免重复扫描）
@@ -213,6 +212,7 @@ class DraftGenerator:
             rules = self.storage.list()
             cats = sorted(set(r.category for r in rules))
         except Exception:
+            logging.warning("DraftGenerator._get_relevant_categories: 无法获取规则列表，回退至 general")
             cats = ["general"]
 
         if len(cats) <= 5:
@@ -285,7 +285,7 @@ class DraftGenerator:
             if valid_cats and category not in valid_cats:
                 category = "general"
         except Exception:
-            pass
+            logging.warning("DraftGenerator._validate: 分类校验失败")
 
         # tags 校验
         tags = [str(t).strip() for t in tags if str(t).strip()][:10]
@@ -333,6 +333,7 @@ class DualDedup:
                     self._content_hashes.add(h)
                     self._content_hash_to_rule[h] = (r.id, r.title)
         except Exception:
+            logging.warning("DualDedup._rebuild_hash_cache: 哈希缓存重建失败")
             self._content_hashes = set()
             self._content_hash_to_rule = {}
 
@@ -381,7 +382,7 @@ class DualDedup:
                         "similarity": round(best_sim, 4),
                     }
             except Exception:
-                pass
+                logging.warning("DualDedup.check: 标题去重检查失败")
 
         return {
             "is_duplicate": False,
@@ -504,7 +505,7 @@ class ConfidenceAdjuster:
                         update_kw["verifier"] = "ai_verified"
                         action = "promoted"
                 except Exception:
-                    pass
+                    logging.warning("ConfidenceAdjuster.record_feedback: 反馈统计获取失败")
 
             self.storage.update(rule_id, **update_kw)
 
@@ -565,7 +566,7 @@ class ConfidenceAdjuster:
                         if (now - last_fb).days < self.decay_days:
                             continue
                 except Exception:
-                    pass
+                    logging.warning("ConfidenceAdjuster.decay_check: 反馈获取失败")
 
                 # 执行衰减
                 new_conf = max(0.05, rule.confidence * 0.9)
@@ -585,7 +586,7 @@ class ConfidenceAdjuster:
                 decayed.append(rule.id)
 
         except Exception:
-            pass
+            logging.warning("ConfidenceAdjuster.decay_check: 衰减检查失败")
 
         return decayed
 
@@ -609,9 +610,9 @@ class ConfidenceAdjuster:
                         )
                         promoted.append(rule.id)
                 except Exception:
-                    pass
+                    logging.warning("ConfidenceAdjuster.promote_check: 反馈统计获取失败")
         except Exception:
-            pass
+            logging.warning("ConfidenceAdjuster.promote_check: 升级检查失败")
         return promoted
 
 
@@ -793,6 +794,7 @@ class AutoIngest:
             else:
                 return None
         except Exception:
+            logging.warning("AutoIngest._create_rule: 规则创建失败")
             return None
 
     def _check_daily_reset(self):

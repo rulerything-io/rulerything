@@ -45,12 +45,10 @@ from datetime import datetime, date
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
+from core.utils import _iso_now
 
 
 # ── 辅助 ────────────────────────────────────────────────
-
-def _iso_now() -> str:
-    return datetime.now().isoformat()
 
 
 def _retry_with_backoff(
@@ -278,6 +276,7 @@ class ClaudeProvider(AIProvider):
         self.model = config.get("model", "claude-sonnet-4-6")
         self.api_key = os.environ.get(config.get("api_key_env", "ANTHROPIC_API_KEY"), "")
         self.costs = self.MODEL_COSTS.get(self.model, {"input": 3.0, "output": 15.0})
+        self.timeout = config.get("timeout", 30)
 
     def chat(self, messages: List[dict], max_tokens: int = 1024,
              temperature: float = 0.3) -> dict:
@@ -300,7 +299,7 @@ class ClaudeProvider(AIProvider):
 
         start = time.perf_counter()
         try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                 data = json.loads(resp.read())
         except (urllib.error.URLError, json.JSONDecodeError, OSError) as e:
             raise RuntimeError(f"Claude API 调用失败: {e}") from e
@@ -350,6 +349,7 @@ class OpenAIProvider(AIProvider):
         self.model = config.get("model", "gpt-4o-mini")
         self.api_key = os.environ.get(config.get("api_key_env", "OPENAI_API_KEY"), "")
         self.costs = self.MODEL_COSTS.get(self.model, {"input": 0.15, "output": 0.6})
+        self.timeout = config.get("timeout", 30)
 
     def chat(self, messages: List[dict], max_tokens: int = 1024,
              temperature: float = 0.3) -> dict:
@@ -370,7 +370,7 @@ class OpenAIProvider(AIProvider):
 
         start = time.perf_counter()
         try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                 data = json.loads(resp.read())
         except (urllib.error.URLError, json.JSONDecodeError, OSError) as e:
             raise RuntimeError(f"OpenAI API 调用失败: {e}") from e
@@ -425,6 +425,7 @@ class DeepSeekProvider(AIProvider):
         self.model = config.get("model", "deepseek-chat")
         self.api_key = os.environ.get(config.get("api_key_env", "DEEPSEEK_API_KEY"), "")
         self.costs = self.MODEL_COSTS.get(self.model, {"input": 0.14, "output": 0.28})
+        self.timeout = config.get("timeout", 30)
 
     def chat(self, messages: List[dict], max_tokens: int = 1024,
              temperature: float = 0.3) -> dict:
@@ -445,7 +446,7 @@ class DeepSeekProvider(AIProvider):
 
         start = time.perf_counter()
         try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                 data = json.loads(resp.read())
         except (urllib.error.URLError, json.JSONDecodeError, OSError) as e:
             raise RuntimeError(f"DeepSeek API 调用失败: {e}") from e
@@ -487,6 +488,7 @@ class LocalProvider(AIProvider):
     def __init__(self, config: dict):
         self.endpoint = config.get("endpoint") or "http://localhost:11434/api/chat"
         self.model = config.get("model", "qwen2.5:7b")
+        self.timeout = config.get("timeout", 60)
 
     def chat(self, messages: List[dict], max_tokens: int = 1024,
              temperature: float = 0.3) -> dict:
@@ -504,7 +506,7 @@ class LocalProvider(AIProvider):
 
         start = time.perf_counter()
         try:
-            with urllib.request.urlopen(req, timeout=60) as resp:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                 data = json.loads(resp.read())
         except (urllib.error.URLError, json.JSONDecodeError, OSError) as e:
             raise RuntimeError(f"本地模型调用失败: {e}") from e
@@ -616,7 +618,7 @@ class AIValidator:
             if self._gap and hasattr(self._gap, "_max_similarity"):
                 return self._gap._max_similarity(text, titles)
         except Exception:
-            pass
+            logger.warning("SimilarityMatcher.max_similarity: gap_detector 不可用，降级至 Jaccard")
 
         # 纯 Python 简易匹配：词袋 + Jaccard
         return self._jaccard_similarity(text, titles)

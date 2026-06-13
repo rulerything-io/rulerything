@@ -115,6 +115,10 @@ class AlertManager:
         if webhook_cfg.get("enabled", False) and webhook_cfg.get("url"):
             self.channels.append(WebhookAlert(webhook_cfg))
 
+        # 严重级别路由：低于此级别的 alert 不发 webhook
+        self.webhook_min_level = self.config.get("webhook_min_level", "warning")
+        self._severity_order = ["debug", "info", "warning", "error", "critical"]
+
         # 频率限制: {alert_key: last_send_time}
         self._rate_limits: Dict[str, datetime] = {}
         self._default_cooldown_sec = self.config.get("cooldown_seconds", 300)
@@ -154,7 +158,12 @@ class AlertManager:
             self._rate_limits[alert_key] = datetime.now()
 
         sent = False
+        min_weight = self._severity_order.index(self.webhook_min_level)
+        level_weight = self._severity_order.index(level) if level in self._severity_order else 1
         for channel in self.channels:
+            # 严重级别路由：debug/info 不触发 webhook
+            if isinstance(channel, WebhookAlert) and level_weight < min_weight:
+                continue
             try:
                 ok = channel.send(effective_title, message, level)
                 if ok:
@@ -163,7 +172,7 @@ class AlertManager:
                     with self._lock:
                         self.stats["by_channel"][channel_name] += 1
             except Exception:
-                pass
+                logging.warning("AlertManager: 通道发送失败 (%s)", channel.__class__.__name__)
 
         if sent:
             with self._lock:

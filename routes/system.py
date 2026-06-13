@@ -17,6 +17,7 @@ from fastapi.responses import RedirectResponse, JSONResponse
 
 from core.state import state
 from core.auth import require_write_token
+from core.version import VERSION
 
 router = APIRouter()
 
@@ -33,7 +34,7 @@ async def health():
     idx_stats = state.index.stats()
     return {
         "status": "ok",
-        "version": "1.1.1",
+        "version": VERSION,
         "uptime_seconds": int((datetime.now() - state._start_time).total_seconds()),
         **idx_stats,
     }
@@ -109,6 +110,36 @@ async def get_logs(limit: int = Query(50, ge=1, le=500),
             entries.append(entry)
 
     return {"lines": entries[-limit:]}
+
+
+@router.get("/trigger-logs")
+async def get_trigger_logs(limit: int = Query(50, ge=1, le=200)):
+    """获取规则触发记录（尾部读取，防大文件 OOM）。"""
+    log_file = Path(state._BASE_DIR) / "logs" / "rule_triggers.log"
+    if not log_file.exists():
+        return {"triggers": []}
+
+    entries = []
+    with open(log_file, "r", encoding="utf-8") as f:
+        # 快速跳到文件尾部，只读末尾 ~64KB
+        chunk_size = 65536
+        f.seek(0, 2)
+        file_size = f.tell()
+        position = max(0, file_size - chunk_size)
+        f.seek(position)
+        if position > 0:
+            f.readline()  # 跳过第一行可能的不完整行
+
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entries.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+
+    return {"triggers": entries[-limit:]}
 
 
 @router.get("/stats")

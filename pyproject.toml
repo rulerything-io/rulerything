@@ -8,9 +8,22 @@ dependencies = [
     "uvicorn[standard]>=0.30.0",
     "pydantic>=2.0",
     "pyyaml>=6.0",
+    "numpy>=1.24",
+    "scipy>=1.10",
 ]
 
 [project.optional-dependencies]
+full = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "scikit-learn>=1.3",
+    "jieba>=0.42",
+    "rank-bm25>=0.2",
+]
+semantic = [
+    "sentence-transformers>=2.2",
+    "faiss-cpu>=1.7",
+]
 test = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",

@@ -16,6 +16,9 @@
 """
 EnhancedEverythingIndex — 多键排序 + 增量更新 + 前缀搜索增强（Phase 3）
 
+已弃用：与 index.py EverythingStyleIndex 功能重叠。
+        仅由 AdaptiveRuleSystem 使用，后续应合并回主索引。
+
 符合 Everything 五条铁律：
 1. 全内存索引 ✅
 2. 排序数组 + 二分查找 ✅

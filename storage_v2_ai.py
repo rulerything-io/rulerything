@@ -9,9 +9,7 @@ import sqlite3
 from datetime import datetime
 from typing import Dict, List, Optional
 
-
-def _iso_now() -> str:
-    return datetime.now().isoformat()
+from core.utils import _iso_now
 
 
 class AIMixin:

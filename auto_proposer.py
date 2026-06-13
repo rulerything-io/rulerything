@@ -24,6 +24,7 @@ AutoProposer — 全自动提案系统（v3.0 Phase B）
 """
 
 import time
+import logging
 from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
@@ -384,6 +385,7 @@ class ProposalSystem:
                         error_message=error_msg,
                     )
                 except Exception:
+                    logging.warning("auto_proposer: 记录回滚操作失败")
                     pass
 
         # 更新提案状态

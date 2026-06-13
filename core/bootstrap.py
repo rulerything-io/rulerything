@@ -172,7 +172,7 @@ def _init_v3_modules():
             if action == "add" and hasattr(data, "id"):
                 state.index.add(data)
         except Exception:
-            pass
+            state.logger.warn("index", "索引同步失败")
 
     state.storage_v2.set_index_callback(_sync_index)
     state.storage = state.storage_v2
@@ -262,6 +262,6 @@ def _init_v3_modules():
                                       f"AI 缓存已就绪: 共 {len(state.ai_bridge.cache.cache)} 条, "
                                       f"{hit_count}/{min(20, len(recent))} 热门查询已缓存")
             except Exception:
-                pass
+                state.logger.warn("v3", "AI 缓存预热失败")
         except Exception as e:
             state.logger.info("v3", f"Phase C 初始化失败: {e}")

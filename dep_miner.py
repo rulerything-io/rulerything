@@ -36,6 +36,7 @@ Everything 原则：
 import json
 import math
 import re
+import logging
 from collections import defaultdict, Counter, deque
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
@@ -109,6 +110,7 @@ class DepMiner:
         try:
             return self.storage.get_recent_queries(days=7)
         except Exception:
+            logging.warning("dep_miner: 获取近期查询失败，返回空列表")
             return []
 
     def _get_query_results(self) -> List[List[str]]:
@@ -122,6 +124,7 @@ class DepMiner:
                 if results:
                     return results
         except Exception:
+            logging.warning("dep_miner: 获取高级查询结果失败，降级到兼容模式")
             pass
 
         # 降级：从 query_log 文本查询模拟（兼容旧数据）
@@ -133,6 +136,7 @@ class DepMiner:
                 if query:
                     results.append(self._simulate_result_ids(query))
         except Exception:
+            logging.warning("dep_miner: 获取近期查询失败（降级），返回空列表")
             return []
         return results
 
@@ -156,6 +160,7 @@ class DepMiner:
                     if len(ids) >= 10:
                         break
         except Exception:
+            logging.warning("dep_miner: 模拟搜索结果ID失败，返回空列表")
             pass
         return ids
 
@@ -310,6 +315,7 @@ class DepMiner:
         try:
             self.storage.save_relation(source, target, relation_type, strength, evidence)
         except Exception:
+            logging.warning("dep_miner: 保存规则关系失败")
             pass
 
     def clear_relations(self):
@@ -318,6 +324,7 @@ class DepMiner:
             self.storage.clear_relations()
             self.stats_counter = {k: 0 for k in self.stats_counter}
         except Exception:
+            logging.warning("dep_miner: 清空规则关系失败")
             pass
 
     # ── 查询 ───────────────────────────────────────────
@@ -328,6 +335,7 @@ class DepMiner:
         try:
             return self.storage.get_relations(rule_id=rule_id, relation_type=relation_type)
         except Exception:
+            logging.warning("dep_miner: 获取规则关系失败，返回空列表")
             return []
 
     def get_graph_data(self) -> dict:

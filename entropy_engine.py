@@ -131,10 +131,12 @@ class EntropyEngine:
         if not all_results:
             return 0.0
         counter = Counter(all_results)
+        n_distinct = len(counter)
         probs = np.array(list(counter.values())) / len(all_results)
         entropy = float(-np.sum(probs * np.log2(probs + 1e-10)))
-        # 归一化：log2(794) ≈ 9.6 为最大熵
-        return min(1.0, entropy / 9.6)
+        # 归一化：log2(实际规则数) 为最大熵
+        max_entropy = np.log2(max(n_distinct, 2))
+        return min(1.0, entropy / max_entropy)
 
     def _calc_cache_entropy(self, cache_stats: Dict) -> float:
         """缓存命中率的波动熵"""

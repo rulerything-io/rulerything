@@ -25,6 +25,7 @@ GapDetector — 知识缺口检测引擎（v3.0 Phase B）
 
 import math
 import re
+import logging
 from collections import Counter, defaultdict
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
@@ -168,6 +169,7 @@ class GapDetector:
                     vectors.append(vec)
                 return vectors, list(vocab)
             except Exception:
+                logging.warning("gap_detector: sklearn TF-IDF 失败，降级到纯 Python")
                 pass  # 降级到纯 Python
 
         # 纯 Python TF-IDF
@@ -214,6 +216,7 @@ class GapDetector:
                         max_sim = sim
                 return max_sim
             except Exception:
+                logging.warning("gap_detector: 向量相似度计算失败，降级到纯 Python")
                 pass
 
         # 纯 Python：一次性计算所有标题的 TF-IDF（正确计算 IDF）

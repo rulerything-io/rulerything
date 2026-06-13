@@ -3,6 +3,12 @@ Rulerything — 工具函数
 """
 
 import re
+from datetime import datetime
+
+
+def _iso_now() -> str:
+    """返回当前时间的 ISO 格式字符串。"""
+    return datetime.now().isoformat()
 
 from core.state import state
 

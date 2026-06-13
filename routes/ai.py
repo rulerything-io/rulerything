@@ -3,6 +3,7 @@ Rulerything — AI Bridge / 自动提炼路由
 """
 
 import hashlib
+import logging
 import time
 from datetime import datetime
 from typing import Optional, List
@@ -33,7 +34,7 @@ async def ai_query(query: str = Query(..., min_length=1)):
                 v_result = validation.get("result", "unverifiable")
                 state.auto_ingest.enqueue(query, result["content"], v_result)
             except Exception:
-                pass
+                logging.warning("ai_query: auto_ingest.enqueue 失败")
         return result
     except Exception as e:
         return {"source": "system", "error": str(e)}
@@ -177,7 +178,7 @@ async def ai_respond(req: AIRespondRequest, auth=Depends(require_write_token)):
                 "consistent",
             )
         except Exception:
-            pass
+            state.logger.warn("ai_bridge", "ai_respond: auto_ingest.enqueue 失败")
     return {"status": "ok", "source": "delegated"}
 
 

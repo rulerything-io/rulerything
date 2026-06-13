@@ -130,3 +130,13 @@ class RuleLogger:
     def info(self, component: str, message: str, **kwargs):
         """记录信息日志。"""
         self._log(logging.INFO, "system", component=component, message=message, **kwargs)
+
+    def shutdown(self):
+        """关闭日志系统（flush 所有 handlers）。"""
+        for handler in self._logger.handlers:
+            try:
+                handler.flush()
+                handler.close()
+            except Exception:
+                pass
+        self._logger.handlers.clear()

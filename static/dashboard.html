@@ -496,30 +496,49 @@ tr:last-child td { border-bottom: none; }
 <!-- ===== 日志 ===== -->
 <div id="page-logs" class="page">
   <div class="page-title">
-    &#9773; 实时日志
-    <span id="log-live-indicator" style="font-size:13px;font-weight:normal;color:#00b894;margin-left:12px">● 自动刷新</span>
+    &#9773; 日志
+    <span id="log-live-indicator" style="font-size:13px;font-weight:normal;color:#00b894;margin-left:12px">●</span>
   </div>
-  <div class="log-toolbar">
-    <select id="log-level-filter" onchange="restartLogPolling()">
-      <option value="">全部级别</option>
-      <option value="INFO">INFO</option>
-      <option value="WARN">WARN</option>
-      <option value="ERROR">ERROR</option>
-    </select>
-    <select id="log-type-filter" onchange="restartLogPolling()">
-      <option value="">全部类型</option>
-      <option value="query">query</option>
-      <option value="evolution">evolution</option>
-      <option value="system">system</option>
-    </select>
-    <span style="font-size:12px;color:#636e72">每 3 秒刷新</span>
-    <button class="btn btn-outline btn-sm" onclick="restartLogPolling();loadLogs()">立即刷新</button>
-    <label style="font-size:12px;color:#636e72;margin-left:8px">
-      <input type="checkbox" id="log-auto-scroll" checked> 自动滚动
-    </label>
+  <div class="section-tabs">
+    <button class="section-tab active" data-logtab="system-log-tab">系统日志</button>
+    <button class="section-tab" data-logtab="trigger-log-tab">触发记录</button>
   </div>
-  <div class="log-container" id="log-list">
-    <div class="empty" style="color:#636e72">加载中…</div>
+
+  <!-- 系统日志 -->
+  <div id="system-log-tab">
+    <div class="log-toolbar">
+      <select id="log-level-filter" onchange="restartLogPolling()">
+        <option value="">全部级别</option>
+        <option value="INFO">INFO</option>
+        <option value="WARN">WARN</option>
+        <option value="ERROR">ERROR</option>
+      </select>
+      <select id="log-type-filter" onchange="restartLogPolling()">
+        <option value="">全部类型</option>
+        <option value="query">query</option>
+        <option value="evolution">evolution</option>
+        <option value="system">system</option>
+      </select>
+      <span style="font-size:12px;color:#636e72">每 3 秒刷新</span>
+      <button class="btn btn-outline btn-sm" onclick="restartLogPolling();loadLogs()">立即刷新</button>
+      <label style="font-size:12px;color:#636e72;margin-left:8px">
+        <input type="checkbox" id="log-auto-scroll" checked> 自动滚动
+      </label>
+    </div>
+    <div class="log-container" id="log-list">
+      <div class="empty" style="color:#636e72">加载中…</div>
+    </div>
+  </div>
+
+  <!-- 触发记录 -->
+  <div id="trigger-log-tab" style="display:none">
+    <div class="log-toolbar">
+      <span style="font-size:12px;color:#636e72">每次 smart 搜索命中规则时自动记录</span>
+      <button class="btn btn-outline btn-sm" onclick="loadTriggerLogs()">刷新</button>
+    </div>
+    <div class="log-container" id="trigger-log-list">
+      <div class="empty" style="color:#636e72">加载中…</div>
+    </div>
   </div>
 </div>
 
@@ -1222,6 +1241,51 @@ async function saveAIConfig(event) {
     btn.textContent = '✓ 保存配置';
   }
 }
+
+async function loadTriggerLogs() {
+  const div = document.getElementById('trigger-log-list');
+  try {
+    const data = await api('GET', '/trigger-logs?limit=100');
+    const triggers = data.triggers || [];
+    if (triggers.length === 0) {
+      div.innerHTML = '<div class="empty" style="color:#636e72">暂无触发记录</div>';
+      return;
+    }
+    div.innerHTML = triggers.map(t => {
+      const ts = t.timestamp ? t.timestamp.slice(0, 22) : '--';
+      const rules = (t.rules || []).join(', ');
+      const query = escHtml(t.query || '');
+      const ruleCount = t.rule_count || 0;
+      return '<div class="log-entry">'
+        + '<span class="log-time">' + ts + '</span>'
+        + '<span class="log-level INFO" style="width:30px">' + ruleCount + '条</span>'
+        + '<span class="log-msg" style="color:#55efc4">' + query + '</span>'
+        + '<span class="log-extra">规则: ' + escHtml(rules) + '</span>'
+        + '</div>';
+    }).join('');
+  } catch (e) {
+    div.innerHTML = '<div class="empty" style="color:#d63031">加载失败: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+// Log tabs switching
+document.querySelectorAll('[data-logtab]').forEach(function(el) {
+  el.addEventListener('click', function() {
+    document.querySelectorAll('[data-logtab]').forEach(function(x) { x.classList.remove('active'); });
+    el.classList.add('active');
+    document.getElementById('system-log-tab').style.display = 'none';
+    document.getElementById('trigger-log-tab').style.display = 'none';
+    document.getElementById(el.dataset.logtab).style.display = 'block';
+    // 切换触发记录时刷新
+    if (el.dataset.logtab === 'trigger-log-tab') {
+      loadTriggerLogs();
+      // 暂停系统日志轮询
+      if (logPollTimer) { clearInterval(logPollTimer); logPollTimer = null; }
+    } else {
+      restartLogPolling();
+    }
+  });
+});
 
 function restartLogPolling() {
   if (logPollTimer) clearInterval(logPollTimer);

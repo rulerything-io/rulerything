@@ -8,11 +8,9 @@ import sqlite3
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
+from core.utils import _iso_now
+
 QUERY_LOG_RETENTION_DAYS = 56  # 8 周轮换
-
-
-def _iso_now() -> str:
-    return datetime.now().isoformat()
 
 
 class LogMixin:

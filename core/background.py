@@ -12,9 +12,11 @@ Rulerything — 后台管理循环
 - 系统健康检查 + 告警
 """
 
+import os
 import threading
 import time
 from datetime import datetime
+from pathlib import Path
 
 from core.state import state
 
@@ -130,6 +132,26 @@ def management_loop():
                         state.logger.info("ai", f"置信度升级: {len(promoted)} 条规则", rules=promoted)
                 except Exception as e:
                     state.logger.warn("ai", f"置信度检查异常: {e}")
+
+            # 每 60 tick：规则触发日志清理（防磁盘满）
+            if tick_count % 60 == 0:
+                try:
+                    log_dir = Path(state._BASE_DIR) / "logs"
+                    trigger_files = sorted(log_dir.glob("rule_triggers.log*"))
+                    total_size = sum(f.stat().st_size for f in trigger_files if f.exists())
+                    if total_size > 50 * 1024 * 1024:  # > 50MB
+                        # 从最旧备份开始删
+                        for f in reversed(trigger_files):
+                            if total_size <= 30 * 1024 * 1024:
+                                break
+                            if f.suffix:  # 是备份文件（带后缀）
+                                sz = f.stat().st_size
+                                f.unlink()
+                                total_size -= sz
+                                state.logger.info("system",
+                                    f"清理过期触发日志: {f.name} ({sz // 1024}KB)")
+                except Exception as e:
+                    state.logger.warn("system", f"触发日志清理异常: {e}")
 
         except Exception as e:
             state.logger.error("management", "loop_crash", f"管理循环未捕获异常: {e}")
