@@ -110,6 +110,14 @@ class Rule:
             val = d.get(key)
             if isinstance(val, str):
                 d[key] = datetime.fromisoformat(val)
+        # 兼容旧数据：tags 可能是 JSON 字符串而非数组
+        tags = d.get("tags")
+        if isinstance(tags, str):
+            import json as _json
+            try:
+                d["tags"] = _json.loads(tags)
+            except (_json.JSONDecodeError, TypeError):
+                d["tags"] = []
         return cls(**d)
 
     def record_hit(self):
