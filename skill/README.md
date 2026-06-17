@@ -28,26 +28,21 @@ Claude responds with:
 
 - **Claude Code** (CLI or IDE extension)
 - **Python 3.10+**
-- **Rulerything server** — cloned and running (see below)
+- **Rulerything server** — already included if you cloned this repo
 
 ## Quick Install
 
 ```bash
-# 1. Clone this skill repo
-git clone https://github.com/rulerything-io/rulerything-skill.git
-cd rulerything-skill
+# 1. Clone the main repo (includes both server and skill)
+git clone https://github.com/rulerything-io/rulerything.git
+cd rulerything
 
-# 2. Clone the rulerything server (if not already done)
-git clone https://github.com/rulerything-io/rulerything.git ../rulerything
-
-# 3. Install server dependencies
-cd ../rulerything
+# 2. Install server dependencies
 pip install fastapi uvicorn pyyaml numpy scipy
 pip install scikit-learn jieba rank-bm25  # optional but recommended
-cd ../rulerything-skill
 
-# 4. Install the skill into your Claude Code project
-python install.py --project /path/to/your/project
+# 3. Install the skill into your Claude Code project
+python skill/install.py --project /path/to/your/project
 ```
 
 ## Usage
@@ -121,16 +116,29 @@ The skill is configured via environment variables or `config.yaml`:
 ## Project Structure
 
 ```
-rulerything-skill/
-├── README.md                 # This file
-├── CLAUDE.md                 # Claude Code integration reference
-├── rule_helper.py            # CLI helper — the main integration point
-├── config.yaml.example       # Example configuration
-├── install.py                # One-command installer
-├── hooks/
-│   ├── post-session-start.sh # Auto-start hook template
-│   └── README.md             # Hook setup guide
-├── .gitignore
+rulerything/                   # Main repo root
+├── main.py                    # Rulerything server (FastAPI)
+├── cli.py                     # Server CLI
+├── ...                        # Server source files (30+ modules)
+│
+├── skill/                     # ← This package
+│   ├── README.md              # This file
+│   ├── CLAUDE.md              # Claude Code integration reference
+│   ├── rule_helper.py         # CLI helper — the main integration point
+│   ├── config.yaml.example    # Example configuration
+│   ├── install.py             # One-command installer
+│   ├── hooks/
+│   │   ├── post-session-start.sh   # Auto-start hook (Linux/macOS)
+│   │   ├── post-session-start.ps1  # Auto-start hook (Windows)
+│   │   └── README.md               # Hook setup guide
+│   └── .gitignore
+│
+├── data/                      # Rule data files (JSONL)
+├── core/                      # Server core modules
+├── routes/                    # API routes
+├── tests/                     # Test suite
+├── config.yaml                # Server configuration
+├── pyproject.toml
 └── LICENSE
 ```
 

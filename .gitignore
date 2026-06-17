@@ -13,6 +13,9 @@ data/snapshots/
 data/.jsonl_backup/
 data/archived/
 
+# skill user config
+skill/config.yaml
+
 # Internal documents (not for open source)
 3.0优化方案.md
 3.0方案审查.md

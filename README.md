@@ -5,6 +5,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License"></a>
+  <a href="./skill/README.md"><img src="https://img.shields.io/badge/Claude%20Code-Skill-blueviolet" alt="Claude Code Skill"></a>
 </p>
 
 ---
@@ -55,6 +56,8 @@ python cli.py status
 ```
 
 服务启动在 `http://127.0.0.1:8001`。
+
+> **Claude Code 用户？** 直接跳到 [`skill/` 目录](./skill/README.md) 开始集成。不需要关心服务端细节。
 
 ## Usage
 
