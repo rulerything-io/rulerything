@@ -1,0 +1,16 @@
+# Rulerything Skill — Configuration
+#
+# Copy to config.yaml and adjust paths for your environment.
+# Environment variables override these values.
+
+# Path to the rulerything rule system (cloned from github.com/rulerything-io/rulerything)
+rulerything_dir: /path/to/rulerything
+
+# API port for the rule server
+port: 8001
+
+# Auto-start server on query if not running
+auto_start: true
+
+# Rule trigger log path (optional, defaults to $rulerything_dir/logs/rule_triggers.log)
+# log_path: /path/to/custom/rule_triggers.log
