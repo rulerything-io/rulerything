@@ -78,12 +78,21 @@ python cli.py start | stop | restart | status
 
 ### Integration
 
-**Claude Code** — 添加到 `CLAUDE.md`：
+**Claude Code** — 推荐使用 `skill/` 目录下的专用集成包：
+
+```bash
+# 一键安装到你的 Claude Code 项目
+python skill/install.py --project /path/to/your/project --setup-hook
+```
+
+或者手动添加到项目的 `CLAUDE.md`：
 
 ```markdown
 When answering technical questions, query the rule base:
-python /path/to/rulerything/cli.py smart "<your question>"
+python /path/to/rulerything/skill/rule_helper.py smart "<your question>"
 ```
+
+详见 [`skill/` 文档](./skill/README.md)。
 
 ## Architecture
 
