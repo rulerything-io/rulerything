@@ -11,7 +11,7 @@ from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from core.state import state
 from core.auth import require_write_token
@@ -34,8 +34,8 @@ class ProfileUpdateRequest(BaseModel):
 
 class ProfileCreateRequest(BaseModel):
     name: str
-    weights: Dict[str, float] = {}
-    priority_order: List[str] = []
+    weights: Dict[str, float] = Field(default_factory=dict)
+    priority_order: List[str] = Field(default_factory=list)
     conflict_strategy: str = "weighted_vote"
 
 
@@ -69,7 +69,7 @@ class ABTestStartRequest(BaseModel):
     profile_a: str = "default"
     profile_b: str = "security_first"
     duration_hours: int = 168
-    traffic_split: float = 0.5
+    traffic_split: float = Field(default=0.5, gt=0.0, lt=1.0)
 
 
 class ABTestStopRequest(BaseModel):

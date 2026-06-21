@@ -24,6 +24,8 @@
 """
 
 import os
+import sys
+from pathlib import Path
 import yaml
 from typing import Any, Dict
 
@@ -31,18 +33,23 @@ from typing import Any, Dict
 # 默认配置
 DEFAULTS: Dict[str, Dict[str, Any]] = {
     "server": {
-        "host": "0.0.0.0",
+        "host": "127.0.0.1",
         "port": 8000,
-        "workers": 4,
+        "workers": 1,
+        "cors_origins": [],
+        "rate_limit_per_min": 1000,
+    },
+    "storage": {
+        "backend": "sqlite",
     },
     "index": {
-        "hot_threshold": 3,
+        "hot_threshold": 10,
         "cold_days": 30,
         "rebuild_on_start": True,
     },
     "evolution": {
         "enabled": True,
-        "auto_apply": True,
+        "auto_apply": False,
         "min_confidence": 0.3,
         "batch_size": 10,
     },
@@ -63,7 +70,7 @@ DEFAULTS: Dict[str, Dict[str, Any]] = {
 
     # v3.0 默认配置
     "v3": {
-        "enabled": True,
+        "enabled": False,
         "storage": "sqlite",
         "dep_miner": {
             "enabled": True,
@@ -99,7 +106,7 @@ DEFAULTS: Dict[str, Dict[str, Any]] = {
         },
         "auto_evolver": {
             "enabled": True,
-            "require_approval": False,
+            "require_approval": True,
             "auto_snapshot_before_evolve": True,
             "max_snapshots": 50,
             "validation_min_samples": 10,
@@ -244,11 +251,31 @@ def _deep_merge(base: dict, override: dict) -> dict:
     return result
 
 
-def load_from_file(path: str = "config.yaml") -> dict:
+def resolve_config_path(path: str | None = None) -> Path | None:
+    """Resolve configuration without depending on the process working directory."""
+    candidates = []
+    env_path = os.environ.get("RULERYTHING_CONFIG")
+    if path:
+        candidates.append(Path(path))
+    elif env_path:
+        candidates.append(Path(env_path))
+    else:
+        candidates.extend([
+            Path(__file__).resolve().parent / "config.yaml",
+            Path(sys.prefix) / "share" / "rulerything" / "config.yaml",
+        ])
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate.resolve()
+    return None
+
+
+def load_from_file(path: str | None = None) -> dict:
     """从 YAML 文件加载配置。"""
-    if not os.path.exists(path):
+    resolved = resolve_config_path(path)
+    if resolved is None:
         return {}
-    with open(path, "r", encoding="utf-8") as f:
+    with open(resolved, "r", encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
 
 
@@ -270,7 +297,7 @@ def load_from_env() -> dict:
 
 
 def load_config(
-    path: str = "config.yaml",
+    path: str | None = None,
     cli_overrides: dict = None,
 ) -> dict:
     """加载配置（YAML → 环境变量 → CLI 覆盖 → 默认值）。

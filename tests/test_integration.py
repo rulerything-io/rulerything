@@ -28,6 +28,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from config import load_config
 from main import enhance_prompt
 
+_CLI_DATA_DIR = tempfile.mkdtemp(prefix="rulerything-cli-")
+
 
 # ── 配置测试 ───────────────────────────────────────
 
@@ -35,14 +37,14 @@ from main import enhance_prompt
 class TestConfig:
     def test_defaults(self):
         config = load_config(path="nonexistent.yaml")
-        assert config["server"]["host"] == "0.0.0.0"
+        assert config["server"]["host"] == "127.0.0.1"
         assert config["server"]["port"] == 8000
         assert config["index"]["hot_threshold"] == 10
         assert config["logging"]["level"] == "INFO"
 
     def test_load_from_file(self):
         config = load_config()
-        assert config["server"]["host"] == "0.0.0.0"
+        assert config["server"]["host"] == "127.0.0.1"
         assert config["index"]["hot_threshold"] == 10
 
     def test_env_override(self):
@@ -87,8 +89,19 @@ class TestConfig:
             path="nonexistent.yaml",
             cli_overrides={"server": {"port": 3000}},
         )
-        assert config["server"]["host"] == "0.0.0.0"
+        assert config["server"]["host"] == "127.0.0.1"
         assert config["server"]["port"] == 3000
+
+    def test_unrelated_cwd_config_is_not_loaded(self):
+        old_cwd = Path.cwd()
+        other = Path(tempfile.mkdtemp())
+        (other / "config.yaml").write_text("server:\n  port: 9999\n", encoding="utf-8")
+        try:
+            os.chdir(other)
+            config = load_config()
+        finally:
+            os.chdir(old_cwd)
+        assert config["server"]["port"] == 8001
 
 
 # ── CLI 测试 ────────────────────────────────────────
@@ -98,6 +111,7 @@ class TestCLI:
     def _run(self, *args) -> subprocess.CompletedProcess:
         env = os.environ.copy()
         env["PYTHONIOENCODING"] = "utf-8"
+        env["RULERYTHING_DATA_DIR"] = _CLI_DATA_DIR
         return subprocess.run(
             [sys.executable, "cli.py", *args],
             capture_output=True, text=True, encoding="utf-8",
@@ -127,13 +141,13 @@ class TestCLI:
 
     def test_search_exact(self):
         # Use ASCII-safe query via unicode escapes in the subprocess call
-        query = "\u7528\u751f\u6210\u5668\u4ee3\u66ff\u5217\u8868\u5904\u7406\u5927\u6570\u636e"
+        query = "Performance Optimization Guidelines"
         r = self._run("search", query)
         assert r.returncode == 0, f"stderr: {r.stderr}"
         assert "performance/001" in r.stdout
 
     def test_search_prefix(self):
-        query = "\u7528\u751f\u6210\u5668"
+        query = "Performance Optimization"
         r = self._run("search", query, "--type", "prefix")
         assert r.returncode == 0, f"stderr: {r.stderr}"
         assert "performance/001" in r.stdout
@@ -192,9 +206,8 @@ class TestCLI:
             assert "cli-test/001" in r.stdout or "OK" in r.stdout
         finally:
             tmpf.unlink(missing_ok=True)
-            from storage import RuleStorage
-            store = RuleStorage("data")
-            store.hard_delete("cli-test/001")
+            from storage_v2 import RuleStorageV2
+            RuleStorageV2(_CLI_DATA_DIR).hard_delete("cli-test/001")
 
 
 # ── enhance_prompt 测试 ────────────────────────────
@@ -231,3 +244,38 @@ class TestEnhancePrompt:
     def test_security_query_keyword(self):
         prompt = enhance_prompt("SQL injection prevention")
         assert "\u89c4\u5219 1" in prompt or "Rule" in prompt
+
+
+class TestApplicationLifecycle:
+    def test_import_has_no_runtime_side_effects(self):
+        code = (
+            "import main; from core.state import state; "
+            "assert state.initialized is False; assert state.storage is None"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", code], cwd=Path(__file__).parent.parent,
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0, result.stderr
+
+    def test_failed_startup_resets_partial_state(self):
+        code = """
+import tempfile
+from fastapi.testclient import TestClient
+from main import create_app
+from core.state import state
+app = create_app({'storage': {'backend': 'invalid'}}, data_dir=tempfile.mkdtemp())
+try:
+    with TestClient(app):
+        pass
+except ValueError:
+    pass
+assert state.initialized is False
+assert state.storage is None
+assert state.logger is None
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", code], cwd=Path(__file__).parent.parent,
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0, result.stderr

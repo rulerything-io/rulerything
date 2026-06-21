@@ -75,7 +75,9 @@ class RuleStorageV2(ProposalMixin, AIMixin, LogMixin):
         self.index_callback = index_callback
 
         # 线程锁（SQLite 连接不能跨线程共享）
-        self._lock = threading.Lock()
+        # Repository callbacks may read the just-written entity before the
+        # outer operation releases its lock; reentrancy avoids self-deadlock.
+        self._lock = threading.RLock()
 
         # 初始化数据库
         self._init_db()
@@ -546,7 +548,7 @@ class RuleStorageV2(ProposalMixin, AIMixin, LogMixin):
     ALLOWED_UPDATE_COLUMNS = frozenset({
         "title", "content", "category", "tags", "confidence", "hit_count",
         "last_hit", "version", "lang", "verifier", "parent_id", "duplicate_of",
-        "evolution_log", "expires_at", "ai_verified", "last_ai_review",
+        "evolution_log", "last_verified", "expires_at", "ai_verified", "last_ai_review",
         "value_vector", "value_confidence", "value_source", "value_provenance",
     })
 
@@ -664,6 +666,41 @@ class RuleStorageV2(ProposalMixin, AIMixin, LogMixin):
                     ).fetchall()
 
         return [self._row_to_rule(r) for r in rows]
+
+    def list_all(self) -> List[Rule]:
+        """Return every physical rule without active/duplicate filtering."""
+        with self._lock:
+            with self._connect() as conn:
+                rows = conn.execute("SELECT * FROM rules ORDER BY id").fetchall()
+        return [self._row_to_rule(row) for row in rows]
+
+    def count_all(self) -> int:
+        with self._lock:
+            with self._connect() as conn:
+                active = conn.execute("SELECT COUNT(*) FROM rules").fetchone()[0]
+                cold = conn.execute("SELECT COUNT(*) FROM rules_cold").fetchone()[0]
+        return active + cold
+
+    def save(self, rule: Rule) -> bool:
+        """Persist a complete rule entity through the repository contract."""
+        values = self._rule_to_row(rule)
+        values.pop("id", None)
+        values = {key: value for key, value in values.items()
+                  if key in self.ALLOWED_UPDATE_COLUMNS}
+        return self.update(rule.id, **values)
+
+    def record_hits(self, rule_ids: List[str]) -> None:
+        """Persist returned-rule hits in one SQLite transaction."""
+        unique_ids = list(dict.fromkeys(rule_ids))
+        if not unique_ids:
+            return
+        now = _iso_now()
+        with self._lock:
+            with self._connect() as conn:
+                conn.executemany(
+                    "UPDATE rules SET hit_count = hit_count + 1, last_hit = ? WHERE id = ?",
+                    [(now, rule_id) for rule_id in unique_ids],
+                )
 
     # ── 冷规则管理 ─────────────────────────────────────
 

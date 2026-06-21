@@ -45,17 +45,20 @@ Rulerything 是一个**自演进规则知识库引擎**。它存储、索引、�
 ## Quick Start
 
 ```bash
-# Install dependencies
-pip install fastapi uvicorn scikit-learn scipy
+# Install the project
+pip install .
 
 # Start the server
-python main.py
+rulerything-server
 
-# Check status
-python cli.py status
+# Search the built-in rule base
+rulerything search "SQL injection" --type smart
 ```
 
 服务启动在 `http://127.0.0.1:8001`。
+
+1.4 默认只启用可信核心：SQLite、索引、严格搜索和 API。AI、自动演化、
+价值层与后台自适应模块需要在 `config.yaml` 中显式开启。
 
 > **Claude Code 用户？** 直接跳到 [`skill/` 目录](./skill/README.md) 开始集成。不需要关心服务端细节。
 
@@ -63,20 +66,18 @@ python cli.py status
 
 ```bash
 # Search rules
-python cli.py search "SQL injection"              # exact match
-python cli.py search "async performance" --type tag    # tag search
+rulerything search "Performance Optimization Guidelines" --type exact
+rulerything search "Performance" --type prefix
+rulerything search "python" --type tag
 
-# Smart search (auto-detects categories)
-python cli.py smart "Python async performance optimization"
+# Smart search is explicit and may combine title, tag and content matches
+rulerything search "Python async performance optimization" --type smart
 
 # List rules by category
-python cli.py list --cat security
+rulerything list --category security
 
 # View rule details
-python cli.py get security/001
-
-# Server management
-python cli.py start | stop | restart | status
+rulerything get security/001
 ```
 
 ### Integration
@@ -100,9 +101,10 @@ python /path/to/rulerything/skill/rule_helper.py smart "<your question>"
 ## Architecture
 
 ```
-main.py                → FastAPI server + WebSocket
-├── index.py           → Rule indexing & retrieval (BM25 + tag)
-├── storage_v2.py      → Dual storage: SQLite + JSONL
+main.py                → Side-effect-free FastAPI application factory
+├── core/repository.py → Single writable repository boundary
+├── index.py           → exact / prefix / tag / smart contracts
+├── storage_v2.py      → SQLite runtime store
 ├── entropy_engine.py  → Phase 1: Performance monitoring & tuning
 ├── immune_system.py   → Phase 2: Quality & conflict detection
 ├── adaptive_system.py → Phase 3: Self-adaptive orchestration
@@ -118,7 +120,8 @@ main.py                → FastAPI server + WebSocket
 
 | Module | Description |
 |--------|-------------|
-| **storage_v2** | SQLite for metadata + JSONL for rule content; hot/cold tiering |
+| **repository** | Selects exactly one writable backend; JSONL only seeds an empty SQLite database |
+| **storage_v2** | SQLite runtime storage with transactions, snapshots and hot/cold tiering |
 | **entropy_engine** | Monitors cache hit rates, latency, conflict ratios; triggers auto-tuning |
 | **immune_system** | 5-dimension quality scoring; scans conflicts, staleness, redundancy |
 | **adaptive_system** | Coordinates all subsystems; circuit-breaker pattern for fault isolation |
@@ -138,9 +141,13 @@ main.py                → FastAPI server + WebSocket
 编辑 `config.yaml` 控制：
 
 - `server.host/port` — HTTP server binding
+- `storage.backend` — the single writable backend (`sqlite` or `jsonl`)
 - `index.*` — cache thresholds, rebuild schedule
 - `evolution.*` — auto-apply, confidence thresholds
 - `immune.*` — quality scoring weights
+
+环境变量 `RULERYTHING_CONFIG`、`RULERYTHING_DATA_DIR` 和
+`RULERYTHING_LOG_DIR` 可分别覆盖配置、运行数据和日志目录。
 
 ### API Key 配置（可选）
 

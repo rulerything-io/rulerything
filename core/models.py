@@ -2,15 +2,16 @@
 Rulerything — Pydantic 请求/响应模型
 """
 
-from typing import Dict, Optional, List, Any
-from pydantic import BaseModel
+from typing import Dict, Optional, List, Any, Literal
+from pydantic import BaseModel, Field
 
 
 class SearchRequest(BaseModel):
-    query: str
-    search_type: str = "exact"
-    category: str = "all"
-    lang: Optional[str] = None  # 语言过滤: zh | en | ja | ...
+    query: str = Field(min_length=1, max_length=2000)
+    search_type: Literal["exact", "prefix", "tag", "smart"] = "exact"
+    category: str = Field(default="all", pattern=r"^[a-z0-9][a-z0-9_-]{0,63}$")
+    lang: Optional[str] = Field(default=None, pattern=r"^[a-z]{2,8}(-[A-Za-z0-9]{2,8})?$")
+    limit: int = Field(default=10, ge=1, le=100)
     user_feedback: Optional[bool] = None
     profile: Optional[str] = None        # v4.0 价值画像名称
     brief: bool = False                  # v4.0 简短决策追溯
@@ -45,13 +46,13 @@ class SearchResponse(BaseModel):
 
 
 class AddRuleRequest(BaseModel):
-    id: str
-    title: str
-    content: str
-    category: str = "general"
-    tags: list = []
-    confidence: float = 0.5
-    verifier: str = "manual"
+    id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*(/[A-Za-z0-9][A-Za-z0-9_.-]*)?$")
+    title: str = Field(min_length=1, max_length=500)
+    content: str = Field(min_length=1, max_length=100_000)
+    category: str = Field(default="general", pattern=r"^[a-z0-9][a-z0-9_-]{0,63}$")
+    tags: list[str] = Field(default_factory=list, max_length=100)
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    verifier: Literal["manual", "auto", "crowd"] = "manual"
 
 
 class RollbackRequest(BaseModel):
@@ -117,4 +118,4 @@ class QueryRequest(BaseModel):
     sort_by: str = "title"
     category: Optional[str] = None
     use_semantic: bool = False
-    limit: int = 10
+    limit: int = Field(default=10, ge=1, le=100)

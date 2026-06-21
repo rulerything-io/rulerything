@@ -40,9 +40,9 @@ class EverythingStyleIndex:
     """
 
     # 可配置阈值
-    HOT_THRESHOLD = 3          # hit_count ≥ 此值进入热缓存（v2.0 优化：从 10 降至 3）
+    HOT_THRESHOLD = 10         # hit_count ≥ 此值进入热缓存
     COLD_DAYS = 30             # 超过此天数未访问进入冷区
-    HOT_UPDATE_INTERVAL = 5    # 每 N 次命中触发缓存刷新（v2.0 优化：从 10 降至 5）
+    HOT_UPDATE_INTERVAL = 10   # 每 N 次命中触发缓存刷新
 
     def __init__(self, rules: Optional[List[Rule]] = None):
         self._rules: Dict[str, Rule] = {}           # id → Rule（索引持有引用）
@@ -60,7 +60,8 @@ class EverythingStyleIndex:
         # 统计
         self.index_version: int = 0
         self._hit_counter: int = 0                   # 累计命中计数
-        self._lock = threading.Lock()                # 命中计数线程安全锁
+        self._lock = threading.RLock()               # 支持幂等替换时的嵌套加锁
+        self._hit_callback = None                    # 批量持久化命中
         self._estimated_cache_bytes: int = 0         # 热缓存字节估算
         self.total_search_count: int = 0
         self.cache_hit_count: int = 0
@@ -180,6 +181,9 @@ class EverythingStyleIndex:
     def add(self, rule: Rule):
         """Add a single rule to the index incrementally (thread-safe)."""
         with self._lock:
+            # Repository 回调可能被重复触发；按 ID 替换而不是追加索引项。
+            if rule.id in self._rules:
+                self.remove(rule.id)
             self._rules[rule.id] = rule
             # Insert into sorted_titles maintaining sort order
             bisect.insort(self.sorted_titles, rule.title)
@@ -263,17 +267,35 @@ class EverythingStyleIndex:
 
     # ── 搜索方法 ───────────────────────────────────────
 
-    def search_exact(self, title: str) -> Optional[Rule]:
+    def _record_results(self, results: List[Rule]):
+        """Record one user-visible query and its unique returned rules."""
+        self.total_search_count += 1
+        unique = {rule.id: rule for rule in results}
+        if any(rule_id in self.hot_cache for rule_id in unique):
+            self.cache_hit_count += 1
+        for rule_id in unique:
+            self._record_hit(rule_id)
+        if unique and self._hit_callback:
+            self._hit_callback(list(unique))
+
+    def set_hit_callback(self, callback):
+        """Set a batch callback used to persist one hit per returned rule."""
+        self._hit_callback = callback
+
+    def search_exact(self, title: str, *, record: bool = True) -> Optional[Rule]:
         """精确标题搜索 — O(log N) 二分查找。"""
         pos = bisect.bisect_left(self.sorted_titles, title)
         if pos < len(self.sorted_titles) and self.sorted_titles[pos] == title:
             rule_id = self.title_to_id[title]
-            self.total_search_count += 1
-            self._record_hit(rule_id)
-            return self._from_cache_or_store(rule_id)
+            rule = self._from_cache_or_store(rule_id)
+            if record:
+                self._record_results([rule] if rule else [])
+            return rule
+        if record:
+            self._record_results([])
         return None
 
-    def search_prefix(self, prefix: str, limit: int = 10) -> List[Rule]:
+    def search_prefix(self, prefix: str, limit: int = 10, *, record: bool = True) -> List[Rule]:
         """前缀搜索 — 类比 Everything 的 'win*' 通配符。"""
         start = bisect.bisect_left(self.sorted_titles, prefix)
         results = []
@@ -281,28 +303,29 @@ class EverythingStyleIndex:
             if not title.startswith(prefix):
                 break
             rule_id = self.title_to_id[title]
-            self.total_search_count += 1
-            self._record_hit(rule_id)
             rule = self._from_cache_or_store(rule_id)
             if rule:
                 results.append(rule)
                 if len(results) >= limit:
                     break
+        if record:
+            self._record_results(results)
         return results
 
-    def search_by_tag(self, tag: str, limit: int = 20) -> List[Rule]:
+    def search_by_tag(self, tag: str, limit: int = 20, *, record: bool = True) -> List[Rule]:
         """标签搜索 — O(1) 哈希表，按置信度排序取 top-k。"""
         rule_ids = self.tag_index.get(tag, [])
         # 先获取所有规则，按置信度排序后截断
         candidates = []
         for rule_id in rule_ids:
-            self.total_search_count += 1
-            self._record_hit(rule_id)
             rule = self._from_cache_or_store(rule_id)
             if rule:
                 candidates.append(rule)
         candidates.sort(key=lambda r: r.confidence, reverse=True)
-        return candidates[:limit]
+        results = candidates[:limit]
+        if record:
+            self._record_results(results)
+        return results
 
     # ── CJK 辅助 ────────────────────────────────────────
 
@@ -326,7 +349,33 @@ class EverythingStyleIndex:
     def search(self, query: str, search_type: str = "exact",
                category: Optional[str] = None, limit: int = 10,
                lang: Optional[str] = None) -> List[Rule]:
-        """统一搜索入口 — 全策略合并 + 匹配类型加权排序。
+        """Strict search contract: exact, prefix, tag, or explicit smart."""
+        query = query.strip()
+        if not query or limit <= 0:
+            return []
+        if search_type == "smart":
+            return self.smart_search(query, category=category, limit=limit, lang=lang)
+        if search_type == "exact":
+            rule = self.search_exact(query, record=False)
+            results = [rule] if rule else []
+        elif search_type == "prefix":
+            results = self.search_prefix(query, limit=limit * 2, record=False)
+            results.sort(key=lambda rule: rule.confidence, reverse=True)
+        elif search_type == "tag":
+            results = self.search_by_tag(query, limit=limit * 2, record=False)
+        else:
+            raise ValueError(f"unsupported search type: {search_type}")
+        results = [
+            rule for rule in results
+            if (not category or rule.category == category)
+            and (not lang or rule.lang == lang)
+        ][:limit]
+        self._record_results(results)
+        return results
+
+    def smart_search(self, query: str, category: Optional[str] = None,
+                     limit: int = 10, lang: Optional[str] = None) -> List[Rule]:
+        """Hybrid relevance search using all retrieval strategies.
 
         所有策略同时执行，结果按匹配类型 × confidence 加权后合并，
         避免链式兜底导致早期不佳结果阻止后续策略。
@@ -344,46 +393,36 @@ class EverythingStyleIndex:
 
         Args:
             query: 搜索关键词
-            search_type: exact | prefix | tag
             category: 分类过滤（可选）
             limit: 最大返回数量
             lang: 语言过滤（可选）: zh | en | ja | ...
         """
+        query = query.strip()
+        if not query or limit <= 0:
+            return []
         scored: List[Tuple[Rule, float]] = []
         q_lower = query.lower()
         has_cjk_flag = has_cjk(query)
 
         # ── 1. 主策略 ──
-        _primary_had_results = False
-        if search_type == "tag":
-            primary_results = self.search_by_tag(query, limit * 2)
-            _primary_had_results = len(primary_results) > 0
-            for r in primary_results:
-                scored.append((r, r.confidence * 0.90))
-        elif search_type == "prefix":
-            primary_results = self.search_prefix(query, limit * 2)
-            _primary_had_results = len(primary_results) > 0
-            for r in primary_results:
-                scored.append((r, r.confidence * 0.85))
-        else:  # exact
-            r = self.search_exact(query)
-            if r:
-                _primary_had_results = True
-                scored.append((r, r.confidence * 1.0))
+        exact = self.search_exact(query, record=False)
+        _primary_had_results = exact is not None
+        if exact:
+            scored.append((exact, exact.confidence))
 
         # ── 2. 标签搜索（query 整体作为标签） ──
         # 主策略已有结果时降权标签匹配，避免高频低质标签淹没精准前缀匹配
         _tag_weight = 0.75 if _primary_had_results else 0.90
-        for r in self.search_by_tag(q_lower, limit * 2):
+        for r in self.search_by_tag(q_lower, limit * 2, record=False):
             scored.append((r, r.confidence * _tag_weight))
 
         # ── 3. 内容包含搜索（全查询） ──
         # 先收集标题匹配的规则 ID，避免内容匹配重复添加
         _title_matched_ids = set()
-        for r in self._search_content(query, limit, match_mode="title_only"):
+        for r in self._search_content(query, limit, match_mode="title_only", record=False):
             scored.append((r, r.confidence * 0.80))
             _title_matched_ids.add(r.id)
-        for r in self._search_content(query, limit, match_mode="content_only"):
+        for r in self._search_content(query, limit, match_mode="content_only", record=False):
             if r.id not in _title_matched_ids:
                 scored.append((r, r.confidence * 0.50))
 
@@ -391,26 +430,26 @@ class EverythingStyleIndex:
         if has_cjk_flag:
             # CJK n-gram 内容搜索（2+ 字，不含单字符）
             for gram in extract_cjk_ngrams(query, min_len=2):
-                for r in self._search_content(gram, limit // 2):
+                for r in self._search_content(gram, limit // 2, record=False):
                     scored.append((r, r.confidence * 0.55))
             # 混合 CJK 文本中的英文词
             for word in extract_english_words(query):
-                for r in self.search_prefix(word, limit // 3):
+                for r in self.search_prefix(word, limit // 3, record=False):
                     scored.append((r, r.confidence * 0.55))
-                for r in self.search_by_tag(word, limit // 3):
+                for r in self.search_by_tag(word, limit // 3, record=False):
                     scored.append((r, r.confidence * 0.50))
-                for r in self._search_content(word, limit // 3):
+                for r in self._search_content(word, limit // 3, record=False):
                     scored.append((r, r.confidence * 0.45))
         else:
             # 纯英文: 按空格分词
             for word in q_lower.split():
                 if len(word) < 2:
                     continue
-                for r in self.search_prefix(word, limit // 3):
+                for r in self.search_prefix(word, limit // 3, record=False):
                     scored.append((r, r.confidence * 0.55))
-                for r in self.search_by_tag(word, limit // 3):
+                for r in self.search_by_tag(word, limit // 3, record=False):
                     scored.append((r, r.confidence * 0.50))
-                for r in self._search_content(word, limit // 3):
+                for r in self._search_content(word, limit // 3, record=False):
                     scored.append((r, r.confidence * 0.45))
 
         # ── 5. 分类命中加分 ──
@@ -421,10 +460,12 @@ class EverythingStyleIndex:
                 for r, s in scored
             ]
 
-        return self._scored_merge(scored, category=category, lang=lang, limit=limit)
+        results = self._scored_merge(scored, category=category, lang=lang, limit=limit)
+        self._record_results(results)
+        return results
 
     def _search_content(self, query: str, limit: int = 10,
-                        match_mode: str = "anywhere") -> List[Rule]:
+                        match_mode: str = "anywhere", *, record: bool = True) -> List[Rule]:
         """在标题和/或内容中搜索关键词（不区分大小写），按置信度取 top-k。
 
         使用倒排索引加速：当查询中的关键词在倒排索引中存在时，只扫描候选规则；
@@ -463,12 +504,13 @@ class EverythingStyleIndex:
                     in_content = q in rule.content.lower()
                     ok = self._match_ok(in_title, in_content, match_mode)
                     if ok:
-                        self.total_search_count += 1
-                        self._record_hit(rule.id)
                         cached = self._from_cache_or_store(rule.id)
                         matches.append(cached or rule)
                 matches.sort(key=lambda r: r.confidence, reverse=True)
-                return matches[:limit]
+                results = matches[:limit]
+                if record:
+                    self._record_results(results)
+                return results
 
         # 全量扫描（回退路径：title_only 或倒排索引不适用时）
         for rule in self._rules.values():
@@ -476,13 +518,14 @@ class EverythingStyleIndex:
             in_content = q in rule.content.lower()
             ok = self._match_ok(in_title, in_content, match_mode)
             if ok:
-                self.total_search_count += 1
-                self._record_hit(rule.id)
                 cached = self._from_cache_or_store(rule.id)
                 matches.append(cached or rule)
 
         matches.sort(key=lambda r: r.confidence, reverse=True)
-        return matches[:limit]
+        results = matches[:limit]
+        if record:
+            self._record_results(results)
+        return results
 
     @staticmethod
     def _match_ok(in_title: bool, in_content: bool, match_mode: str) -> bool:
@@ -500,7 +543,6 @@ class EverythingStyleIndex:
         TODO: 支持 cache.max_size_mb 配置，实现精确字节数计数和驱逐。
         """
         if rule_id in self.hot_cache:
-            self.cache_hit_count += 1
             return self.hot_cache[rule_id]
         return self._rules.get(rule_id)
 

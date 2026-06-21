@@ -139,9 +139,9 @@ def _create_rule_from_ai_response(req: AIRespondRequest) -> str:
         category=category, tags=tags,
         confidence=0.6,
     )
-    state.storage_v2.add(rule)
-    if state.index:
-        state.index.add(rule)
+    ok, message = state.storage_v2.add(rule)
+    if not ok:
+        raise ValueError(message)
     state.storage_v2.log_ingestion(
         query=f"ai_respond:{req.query_id}", rule_id=rule_id,
         title=title, category=category, status="created",

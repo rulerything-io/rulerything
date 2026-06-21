@@ -1,6 +1,6 @@
 [project]
 name = "rulerything"
-version = "1.1.0"
+dynamic = ["version"]
 description = "自进化规则知识库系统 — 作为大语言模型确定性副脑的知识规则系统"
 requires-python = ">=3.10"
 dependencies = [
@@ -11,6 +11,10 @@ dependencies = [
     "numpy>=1.24",
     "scipy>=1.10",
 ]
+
+[project.scripts]
+rulerything = "cli:main"
+rulerything-server = "main:run"
 
 [project.optional-dependencies]
 full = [
@@ -37,10 +41,28 @@ dev = [
 requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools.dynamic]
+version = {attr = "core.version.VERSION"}
+
+[tool.setuptools]
+py-modules = [
+    "adaptive_system", "ai_bridge", "alert", "auto_evolver",
+    "auto_ingest", "auto_proposer", "cli", "config", "dep_miner",
+    "enhanced_index", "entropy_engine", "evolution", "gap_detector",
+    "health", "immune_system", "index", "logger", "main", "migrate_v3",
+    "nlp_utils", "rule", "storage", "storage_v2", "storage_v2_ai",
+    "storage_v2_log", "storage_v2_proposal", "time_decay_cache",
+]
+include-package-data = true
+
 [tool.setuptools.packages.find]
-include = ["rulerything*"]
+include = ["rulerything*", "core*", "routes*", "value*", "semantic_plugin*"]
+
+[tool.setuptools.data-files]
+"share/rulerything" = ["config.yaml", "tool_schema.json"]
+"share/rulerything/data" = ["data/*.jsonl"]
+"share/rulerything/static" = ["static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-asyncio_mode = "auto"

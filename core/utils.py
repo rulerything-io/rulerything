@@ -24,6 +24,14 @@ def enhance_prompt(user_input: str, max_rules: int = 5) -> str:
         #     {"role": "user", "content": user_input},
         # ])
     """
+    if not state.initialized:
+        from core.bootstrap import abort_bootstrap, bootstrap
+        try:
+            bootstrap(start_background=False, owner="prompt-helper")
+        except Exception:
+            abort_bootstrap("prompt-helper")
+            raise
+
     if state.adaptive_system:
         results = state.adaptive_system.query(
             query_text=user_input,
@@ -32,27 +40,7 @@ def enhance_prompt(user_input: str, max_rules: int = 5) -> str:
             limit=max_rules,
         )
     else:
-        all_results = []
-        for search_type in ("exact", "prefix", "tag"):
-            results = state.index.search(user_input, search_type, limit=3)
-            all_results.extend(results)
-
-        keywords = re.findall(r'[a-zA-Z_+#.]+', user_input)
-        for kw in keywords[:5]:
-            kw_lower = kw.lower()
-            tag_results = state.index.search_by_tag(kw_lower, limit=3)
-            all_results.extend(tag_results)
-            prefix_results = state.index.search_prefix(kw_lower, limit=3)
-            all_results.extend(prefix_results)
-
-        seen = set()
-        unique = []
-        for r in all_results:
-            if r.id not in seen:
-                seen.add(r.id)
-                unique.append(r)
-        unique.sort(key=lambda r: r.confidence, reverse=True)
-        results = unique[:max_rules]
+        results = state.index.smart_search(user_input, limit=max_rules)
 
     if not results:
         return user_input

@@ -56,6 +56,25 @@ class AppState:
     # ── FastAPI 应用 ────────────────────────────────────
     app = None  # FastAPI 实例，由 main.py 创建
 
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        """Reset runtime dependencies while preserving the shared object identity."""
+        for name in (
+            "config", "log_level", "_BASE_DIR", "_DATA_DIR", "storage",
+            "storage_v2", "index", "logger", "dep_miner", "proposal_system",
+            "gap_detector", "ai_bridge", "auto_ingest", "auto_evolver",
+            "alert_manager", "evolution", "entropy_engine", "immune_system",
+            "adaptive_system", "value_engine", "mode_engine", "shadow_engine",
+            "_start_time", "_management_heartbeat", "_stop_event",
+            "_management_thread", "runtime_owner", "app",
+        ):
+            setattr(self, name, None)
+        self._management_loop_active = False
+        self.HAS_V3 = False
+        self.initialized = False
+
     # ════════════════════════════════════════════════════
     #  AI 运行时配置（热加载用）
     # ════════════════════════════════════════════════════

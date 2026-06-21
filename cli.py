@@ -18,7 +18,7 @@
 CLI 命令行工具 — 供人类使用的接入层
 
 用法：
-    python cli.py search <query> [--type exact|prefix|tag] [--category CAT]
+    python cli.py search <query> [--type exact|prefix|tag|smart] [--category CAT]
     python cli.py list [--category CAT]
     python cli.py get <rule_id>
     python cli.py add <json_file>
@@ -31,6 +31,7 @@ CLI 命令行工具 — 供人类使用的接入层
 
 import argparse
 import json
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -347,7 +348,7 @@ def main():
     # search
     p_search = sub.add_parser("search", help="搜索规则")
     p_search.add_argument("query", help="搜索关键词")
-    p_search.add_argument("--type", "-t", choices=["exact", "prefix", "tag"],
+    p_search.add_argument("--type", "-t", choices=["exact", "prefix", "tag", "smart"],
                           default="exact", help="搜索类型")
     p_search.add_argument("--category", "-c", help="分类过滤")
     p_search.add_argument("--lang", "-l", help="语言过滤 (zh/en/ja/...)")
@@ -409,20 +410,23 @@ def main():
 
     # 初始化核心组件
     config = load_config()
-    data_dir = str(Path("data").resolve())
-
-    # 检测 v3 模式，优先使用 SQLite 存储（与服务器一致）
-    v3_enabled = config.get("v3", {}).get("enabled", False)
-    if v3_enabled:
-        from storage_v2 import RuleStorageV2
-        storage = RuleStorageV2(data_dir)
+    source_data = Path(__file__).resolve().parent / "data"
+    if os.environ.get("RULERYTHING_DATA_DIR"):
+        data_dir = os.environ["RULERYTHING_DATA_DIR"]
+    elif source_data.is_dir():
+        data_dir = str(source_data)
     else:
-        from storage import RuleStorage
-        storage = RuleStorage(data_dir)
+        data_dir = str(Path.home() / ".rulerything" / "data")
+    packaged_data = Path(sys.prefix) / "share" / "rulerything" / "data"
+    seed_dir = source_data if source_data.is_dir() else packaged_data
+    from core.repository import create_repository
+    storage, _ = create_repository(config, data_dir, str(seed_dir))
 
     logger = RuleLogger("logs", level=config["logging"]["level"])
     index = EverythingStyleIndex(storage.list())
     index.HOT_THRESHOLD = config["index"]["hot_threshold"]
+    if hasattr(storage, "record_hits"):
+        index.set_hit_callback(storage.record_hits)
     evolution = EvolutionEngine(storage, index, logger)
 
     # 快速命令（不需 storage/index）

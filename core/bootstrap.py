@@ -10,13 +10,13 @@ Rulerything — 组件初始化（bootstrap）
 
 import json
 import os
+import sys
 import threading
 from datetime import datetime
 from pathlib import Path
 
 from config import load_config
 from rule import Rule
-from storage import RuleStorage
 from index import EverythingStyleIndex
 from logger import RuleLogger
 from evolution import EvolutionEngine
@@ -49,22 +49,46 @@ except ImportError:
     HAS_V3 = False
 
 from core.state import state
+from core.repository import create_repository
 
 
-def bootstrap():
+def bootstrap(config: dict = None, base_dir: str = None, data_dir: str = None,
+              start_background: bool = True, owner=None):
     """初始化所有组件并注入 state。"""
 
+    runtime_owner = owner if owner is not None else "manual"
+    if state.initialized:
+        if state.runtime_owner == runtime_owner:
+            return state
+        raise RuntimeError("Rulerything runtime is already owned by another application")
+    state.runtime_owner = runtime_owner
+
     # ── 配置 ────────────────────────────────────────────
-    state.config = load_config()
+    state.config = config or load_config()
     state.log_level = state.config["logging"]["level"]
-    state._BASE_DIR = str(Path(__file__).resolve().parent.parent)
-    state._DATA_DIR = os.environ.get("RULERYTHING_DATA_DIR") or str(Path(state._BASE_DIR) / "data")
+    source_base = Path(base_dir or Path(__file__).resolve().parent.parent).resolve()
+    state._BASE_DIR = str(source_base)
+    configured_data = data_dir or os.environ.get("RULERYTHING_DATA_DIR")
+    if configured_data:
+        runtime_data = Path(configured_data).resolve()
+    elif (source_base / "data").is_dir():
+        runtime_data = source_base / "data"
+    else:
+        runtime_data = Path.home() / ".rulerything" / "data"
+    runtime_data.mkdir(parents=True, exist_ok=True)
+    state._DATA_DIR = str(runtime_data)
     state.HAS_V3 = HAS_V3
 
     # ── 核心组件 ────────────────────────────────────────
-    state.storage = RuleStorage(state._DATA_DIR)
+    packaged_seed = Path(sys.prefix) / "share" / "rulerything" / "data"
+    source_seed = source_base / "data"
+    seed_dir = source_seed if source_seed.is_dir() else packaged_seed
+    state.storage, state.storage_v2 = create_repository(
+        state.config, state._DATA_DIR, str(seed_dir)
+    )
+    log_dir = Path(os.environ.get("RULERYTHING_LOG_DIR", runtime_data.parent / "logs"))
     state.logger = RuleLogger(
-        str(Path(state._BASE_DIR) / "logs"),
+        str(log_dir),
         level=state.log_level,
     )
 
@@ -81,12 +105,16 @@ def bootstrap():
                           rule_count=len(rules),
                           index_version=state.index.index_version)
 
+    _attach_index_sync()
+    if hasattr(state.storage, "record_hits"):
+        state.index.set_hit_callback(state.storage.record_hits)
+
     # 启动时预热
     if state.config["cache"]["preheat_on_start"] and rules:
         result = state.index.warmup()
         state.logger.info("cache", f"预热完成，加载 {result['loaded']} 条", **result)
 
-    # ── v3.0 存储层（索引就绪后）─────────────────────────
+    # ── v3.0 扩展模块（核心存储和索引就绪后）─────────────
     _init_v3_modules()
 
     # ── 基础引擎 ────────────────────────────────────────
@@ -136,20 +164,92 @@ def bootstrap():
             state.logger.info("v3", f"启动自检异常: {e}")
 
     # ── v4.0 价值层初始化 ─────────────────────────────────
-    _init_value_layer()
+    _init_value_layer(start_timers=start_background)
 
     # ── 启动管理循环 ────────────────────────────────────
-    if state.config.get("v3", {}).get("enabled", False):
+    if start_background and state.config.get("v3", {}).get("enabled", False):
         state._stop_event = threading.Event()
         from core.background import management_loop
         mgmt_thread = threading.Thread(target=management_loop, daemon=True)
         mgmt_thread.start()
+        state._management_thread = mgmt_thread
         state.logger.info("v3", "Phase B 管理循环已启动 (60s tick)")
 
+    state.initialized = True
     return state
 
 
-def _init_value_layer():
+def _cleanup_resources():
+    """Best-effort cleanup for complete or partially initialized runtimes."""
+    if state._stop_event:
+        state._stop_event.set()
+    if state._management_thread and state._management_thread.is_alive():
+        state._management_thread.join(timeout=2)
+    if state.value_engine and getattr(state.value_engine, "decay_timer", None):
+        try:
+            state.value_engine.decay_timer.stop()
+        except Exception:
+            pass
+    if state.logger:
+        try:
+            state.logger.info("system", "服务正在关闭")
+        except Exception:
+            pass
+    if state.storage_v2:
+        try:
+            state.storage_v2.close()
+        except Exception:
+            pass
+    if state.logger:
+        try:
+            state.logger.shutdown()
+        except Exception:
+            pass
+
+
+def abort_bootstrap(owner=None):
+    """Clean a failed startup without requiring initialized=True."""
+    if owner is not None and state.runtime_owner not in (None, owner):
+        return False
+    _cleanup_resources()
+    state.reset()
+    return True
+
+
+def shutdown(owner=None):
+    """Stop background work and close resources. Safe to call repeatedly."""
+    if not state.initialized:
+        return False
+    if owner is not None and state.runtime_owner != owner:
+        return False
+    _cleanup_resources()
+    state.reset()
+    return True
+
+
+def _attach_index_sync():
+    """Keep the in-memory index consistent with the selected repository."""
+    if not state.storage_v2:
+        return
+
+    def sync_index(action, data):
+        try:
+            if action == "add" and hasattr(data, "id"):
+                state.index.add(data)
+            elif action == "update":
+                rule = state.storage.get(data)
+                if rule:
+                    state.index.remove(data)
+                    state.index.add(rule)
+            elif action == "delete":
+                state.index.remove(data)
+        except Exception:
+            state.logger.warn("index", "索引同步失败")
+
+    state.storage_v2.set_index_callback(sync_index)
+
+
+def _init_value_layer(start_timers: bool = True):
     """初始化 v4.0 价值层（懒加载，enabled=false 时跳过）。"""
     value_cfg = state.config.get("value", {})
     if not value_cfg.get("enabled", False):
@@ -169,7 +269,8 @@ def _init_value_layer():
 
     if state.value_engine:
         # 启动衰减定时器
-        state.value_engine.decay_timer.start()
+        if start_timers:
+            state.value_engine.decay_timer.start()
         state.logger.info("v4",
                           f"价值引擎已初始化: {len(state.value_engine.profiles)} 个画像, "
                           f"mode={value_cfg.get('mode', 'off')}")
@@ -182,10 +283,9 @@ def _init_value_layer():
 
 
 def _init_v3_modules():
-    """初始化 v3.0 存储层及上层模块。"""
+    """初始化依赖 SQLite 扩展能力的上层模块。"""
     v3_cfg = state.config.get("v3", {})
-    if not v3_cfg.get("enabled", False) or v3_cfg.get("storage") != "sqlite":
-        state.storage_v2 = None
+    if not v3_cfg.get("enabled", False) or state.storage_v2 is None:
         state.dep_miner = None
         state.proposal_system = None
         state.gap_detector = None
@@ -194,29 +294,6 @@ def _init_v3_modules():
         state.auto_evolver = None
         state.alert_manager = None
         return
-
-    if not RuleStorageV2:
-        state.logger.warning("v3", "RuleStorageV2 不可用，跳过 v3 初始化")
-        return
-
-    state.storage_v2 = RuleStorageV2(state._DATA_DIR)
-
-    # 索引同步回调
-    def _sync_index(action, data):
-        try:
-            if action == "add" and hasattr(data, "id"):
-                state.index.add(data)
-        except Exception:
-            state.logger.warn("index", "索引同步失败")
-
-    state.storage_v2.set_index_callback(_sync_index)
-    state.storage = state.storage_v2
-
-    # 从 SQLite 重建索引
-    if state.config["index"]["rebuild_on_start"]:
-        sqlite_rules = state.storage.list()
-        state.index.build(sqlite_rules)
-        state.logger.info("v3", f"索引已从 SQLite 重建，共 {len(sqlite_rules)} 条规则")
 
     # dep_miner
     if DepMiner:

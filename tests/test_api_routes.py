@@ -81,6 +81,9 @@ class TestRuleEndpoints:
         assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
         assert resp.json()["ok"] is True
 
+        from core.state import state
+        assert state.index.sorted_titles.count("API Test Rule") == 1
+
     def test_add_duplicate_rule(self, client):
         import uuid
         rid = f"dup_test/{uuid.uuid4().hex[:8]}"
@@ -126,6 +129,47 @@ class TestSearchEndpoint:
             "category": "test",
         })
         assert resp.status_code == 200
+
+    def test_search_contract_rejects_blank_query(self, client):
+        resp = client.post("/search", json={"query": "", "search_type": "exact"})
+        assert resp.status_code == 422
+
+    def test_search_contract_rejects_unknown_type(self, client):
+        resp = client.post("/search", json={"query": "python", "search_type": "fuzzy"})
+        assert resp.status_code == 422
+
+    def test_search_limit_is_honored(self, client):
+        resp = client.post("/search", json={
+            "query": "shell", "search_type": "tag", "limit": 8,
+        })
+        assert resp.status_code == 200
+        assert len(resp.json()["results"]) == 8
+
+    def test_ai_fallback_latency_and_result_are_observed(self, client):
+        import time
+        from core.state import state
+
+        class SlowBridge:
+            @staticmethod
+            def is_enabled():
+                return True
+
+            @staticmethod
+            def enhance_query(query, search_context=None):
+                time.sleep(0.02)
+                return {"source": "ai", "content": "fallback", "confidence": 0.5}
+
+        previous = state.ai_bridge
+        state.ai_bridge = SlowBridge()
+        try:
+            resp = client.post("/search", json={
+                "query": "no-such-rule-for-ai-fallback", "search_type": "exact",
+            })
+        finally:
+            state.ai_bridge = previous
+        assert resp.status_code == 200
+        assert len(resp.json()["results"]) == 1
+        assert resp.json()["latency_ms"] >= 20
 
     def test_warmup(self, client):
         resp = client.post("/warmup")
@@ -246,3 +290,12 @@ class TestBackwardCompat:
     def test_app_exists(self):
         from main import app
         assert app is not None
+
+    def test_second_running_app_is_rejected(self, client):
+        import tempfile
+        from main import create_app
+        other = create_app(data_dir=tempfile.mkdtemp(), start_background=False)
+        with pytest.raises(RuntimeError, match="Only one"):
+            with TestClient(other):
+                pass
+        assert client.get("/health").status_code == 200

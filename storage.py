@@ -143,6 +143,33 @@ class RuleStorage:
             result.append(rule)
         return result
 
+    def list_all(self) -> List[Rule]:
+        """Return every physical rule, including expired and duplicate rows."""
+        return list(self._rules.values())
+
+    def count_all(self) -> int:
+        return len(self._rules)
+
+    def save(self, rule: Rule) -> bool:
+        """Persist a complete rule entity."""
+        old = self._rules.get(rule.id)
+        old_category = old.category if old else rule.category
+        self._rules[rule.id] = rule
+        self._save_category(old_category)
+        if rule.category != old_category:
+            self._save_category(rule.category)
+        return True
+
+    def record_hits(self, rule_ids: List[str]) -> None:
+        """Persist a batch of in-memory hit counters with minimal rewrites."""
+        categories = set()
+        for rule_id in set(rule_ids):
+            rule = self._rules.get(rule_id)
+            if rule:
+                categories.add(rule.category)
+        for category in categories:
+            self._save_category(category)
+
     # ── 去重 ──────────────────────────────────────────
 
     def find_duplicates(self) -> Dict[str, List[Rule]]:

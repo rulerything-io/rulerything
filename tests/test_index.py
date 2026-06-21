@@ -59,6 +59,15 @@ class TestIndexBuild:
         assert idx.index_version == v1 + 1
         assert idx.stats()["total_rules_indexed"] == 2
 
+    def test_add_same_id_is_idempotent(self):
+        idx = EverythingStyleIndex([])
+        rule = _rule("a/001", "Same", tags=["python"])
+        idx.add(rule)
+        idx.add(rule)
+        assert idx.sorted_titles == ["Same"]
+        assert idx.tag_index["python"] == ["a/001"]
+        assert [item.id for item in idx.search("Sa", "prefix")] == ["a/001"]
+
 
 class TestExactSearch:
     def setup_method(self):
@@ -247,6 +256,17 @@ class TestUnifiedSearch:
     def test_search_empty_query(self):
         results = self.idx.search("", "exact")
         assert len(results) == 0
+
+    def test_smart_search_is_explicit(self):
+        strict = self.idx.search("连接池", "exact")
+        smart = self.idx.search("连接池", "smart")
+        assert strict == []
+        assert [rule.id for rule in smart] == ["a/003"]
+
+    def test_unknown_search_type_rejected(self):
+        import pytest
+        with pytest.raises(ValueError):
+            self.idx.search("用", "unknown")
 
 
 class TestWarmup:

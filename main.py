@@ -1,126 +1,154 @@
 # Copyright 2026 rulerything-io
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+"""Rulerything FastAPI application factory.
 
-"""
-Rulerything — FastAPI 服务入口
-
-用法::
-
-    uvicorn main:app --host 127.0.0.1 --port 8001
+Importing this module constructs routes only. Runtime resources are initialized
+inside FastAPI's lifespan, so tests, workers and packaging tools can import it
+without opening databases or starting threads.
 """
 
+import threading
 import time
+from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Optional
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from config import load_config
+from core.bootstrap import abort_bootstrap, bootstrap, shutdown
 from core.state import state
-from core.bootstrap import bootstrap
 from core.version import VERSION
 from routes import register_routes
 
-# ── 初始化所有组件 ────────────────────────────────────
-state = bootstrap()
+_app_lifecycle_lock = threading.RLock()
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """应用生命周期管理（优雅关闭）。"""
-    # 启动阶段：bootstrap 已在模块级完成
-    yield
-    # 关闭阶段
-    state.logger.info("system", "服务正在关闭...")
+def _static_dir(base_dir: Path) -> Optional[Path]:
+    local = base_dir / "static"
+    if local.is_dir():
+        return local
+    import sys
+    installed = Path(sys.prefix) / "share" / "rulerything" / "static"
+    return installed if installed.is_dir() else None
 
-    # 1. 停止管理循环
-    if state._stop_event:
-        state._stop_event.set()
-        state.logger.info("system", "管理循环已停止")
 
-    # 2. 关闭 SQLite 连接
-    if state.storage_v2:
+def create_app(config: dict = None, *, base_dir: str = None,
+               data_dir: str = None, start_background: bool = True) -> FastAPI:
+    """Create an application with explicit runtime dependencies."""
+    resolved_config = load_config(cli_overrides=config) if config is not None else load_config()
+    resolved_base = Path(base_dir or Path(__file__).resolve().parent).resolve()
+    runtime_owner = object()
+
+    @asynccontextmanager
+    async def lifespan(application: FastAPI):
+        with _app_lifecycle_lock:
+            # The compatibility prompt helper may lazily own the runtime.
+            if state.initialized and state.runtime_owner == "prompt-helper":
+                shutdown("prompt-helper")
+            if state.initialized:
+                raise RuntimeError(
+                    "Only one Rulerything application may run per process"
+                )
+            try:
+                bootstrap(
+                    config=application.state.rulerything_config,
+                    base_dir=str(application.state.rulerything_base_dir),
+                    data_dir=application.state.rulerything_data_dir,
+                    start_background=application.state.rulerything_start_background,
+                    owner=runtime_owner,
+                )
+            except Exception:
+                abort_bootstrap(runtime_owner)
+                raise
+        state.app = application
         try:
-            state.storage_v2.close()
-        except Exception as e:
-            state.logger.warn("system", f"SQLite 关闭异常: {e}")
+            yield
+        finally:
+            with _app_lifecycle_lock:
+                shutdown(runtime_owner)
 
-    # 3. 关闭日志（flush + 关闭 handlers）
-    if state.logger:
-        try:
-            state.logger.shutdown()
-        except Exception as e:
-            print(f"日志关闭异常: {e}")
+    application = FastAPI(
+        title="Rulerything",
+        version=VERSION,
+        description="作为大语言模型确定性副脑的知识规则系统",
+        lifespan=lifespan,
+        docs_url="/docs",
+        openapi_url="/openapi.json",
+        redoc_url="/redoc",
+    )
+    application.state.rulerything_config = resolved_config
+    application.state.rulerything_base_dir = resolved_base
+    application.state.rulerything_data_dir = data_dir
+    application.state.rulerything_start_background = start_background
 
-    state.logger.info("system", "服务已关闭")
-
-
-# ── FastAPI 应用 ──────────────────────────────────────
-app = FastAPI(
-    title="Rulerything",
-    version=VERSION,
-    description="作为大语言模型确定性副脑的知识规则系统",
-    lifespan=lifespan,
-    docs_url="/docs",
-    openapi_url="/openapi.json",
-    redoc_url="/redoc",
-)
-state.app = app
-
-# ── CORS 中间件 ─────────────────────────────────────────
-cors_origins = state.config.get("server", {}).get("cors_origins", ["*"])
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=cors_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# ── 限流中间件 ──────────────────────────────────────────
-_rate_limit_per_min = state.config.get("server", {}).get("rate_limit_per_min", 1000)
-_rate_window: list = []
-
-
-@app.middleware("http")
-async def rate_limit_middleware(request: Request, call_next):
-    if request.url.path.startswith("/static/"):
-        return await call_next(request)
-
-    global _rate_window
-    now = time.time()
-    cutoff = now - 60
-    _rate_window = [t for t in _rate_window if t > cutoff]
-
-    if len(_rate_window) >= _rate_limit_per_min:
-        return JSONResponse(
-            status_code=429,
-            content={"error": "请求过于频繁，请稍后再试", "retry_after_seconds": 60},
+    origins = resolved_config.get("server", {}).get("cors_origins", [])
+    if origins:
+        application.add_middleware(
+            CORSMiddleware,
+            allow_origins=origins,
+            allow_credentials="*" not in origins,
+            allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE"],
+            allow_headers=["Authorization", "Content-Type"],
         )
 
-    _rate_window.append(now)
-    return await call_next(request)
+    limit = int(resolved_config.get("server", {}).get("rate_limit_per_min", 1000))
+    windows = defaultdict(deque)
+    rate_lock = threading.Lock()
+    request_count = 0
+
+    @application.middleware("http")
+    async def rate_limit_middleware(request: Request, call_next):
+        nonlocal request_count
+        if request.url.path.startswith("/static/") or limit <= 0:
+            return await call_next(request)
+        now = time.monotonic()
+        client = request.client.host if request.client else "unknown"
+        with rate_lock:
+            request_count += 1
+            cutoff = now - 60
+            if request_count % 256 == 0 or len(windows) > 10_000:
+                for key, old_window in list(windows.items()):
+                    if not old_window or old_window[-1] <= cutoff:
+                        windows.pop(key, None)
+            window = windows[client]
+            while window and window[0] <= cutoff:
+                window.popleft()
+            if len(window) >= limit:
+                return JSONResponse(
+                    status_code=429,
+                    content={"error": {"code": "rate_limit_exceeded",
+                                       "message": "请求过于频繁，请稍后再试"}},
+                    headers={"Retry-After": "60"},
+                )
+            window.append(now)
+        return await call_next(request)
+
+    static_dir = _static_dir(resolved_base)
+    if static_dir:
+        application.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+    register_routes(application)
+    return application
 
 
-# 挂载静态文件
-_BASE_DIR = state._BASE_DIR
-app.mount("/static", StaticFiles(directory=str(Path(_BASE_DIR) / "static")), name="static")
+app = create_app()
 
-# 注册路由
-register_routes(app)
+# Backward-compatible prompt helper. Calling it may lazily initialize the core;
+# importing this module does not.
+from core.utils import enhance_prompt  # noqa: E402,F401
 
-# ── 向后兼容导出 ──────────────────────────────────────
-from core.utils import enhance_prompt  # noqa: E402, F401
+
+def run():
+    """Console entry point for ``rulerything-server``."""
+    import uvicorn
+    server = load_config().get("server", {})
+    uvicorn.run("main:app", host=server.get("host", "127.0.0.1"),
+                port=int(server.get("port", 8001)),
+                workers=int(server.get("workers", 1)))
+
+
+if __name__ == "__main__":
+    run()

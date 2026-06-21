@@ -246,6 +246,8 @@ class EvolutionEngine:
             try:
                 record = self._apply_one(rule, evo_type, params, dry_run)
                 if record:
+                    if not dry_run and not self.storage.save(rule):
+                        raise EvolutionError(f"规则持久化失败: {rule.id}")
                     changes.append(record.to_dict())
             except EvolutionError as e:
                 if self.logger:
@@ -254,20 +256,6 @@ class EvolutionEngine:
                         error_type="evolution_error",
                         message=str(e),
                     )
-
-        if not dry_run and changes:
-            # 保存变更
-            self._save_all()
-            # 增量更新索引，避免全量重建
-            if self.index:
-                for c in changes:
-                    rid = c.get("rule_id")
-                    if not rid:
-                        continue
-                    self.index.remove(rid)
-                    rule = self.storage.get(rid)
-                    if rule:
-                        self.index.add(rule)
 
         return changes
 
@@ -428,9 +416,8 @@ class EvolutionEngine:
         rule.expires_at = restored.expires_at
         rule.evolve(f"v{rule.version}: 回滚到 v{target_version}")
 
-        self._save_all()
-        if self.index:
-            self.index.build(self.storage.list())
+        if not self.storage.save(rule):
+            return False
 
         if self.logger:
             self.logger.evolution(
@@ -446,12 +433,9 @@ class EvolutionEngine:
     # ── 持久化 ───────────────────────────────────────
 
     def _save_all(self):
-        """保存所有变更的规则分类。"""
-        saved_categories = set()
+        """Backward-compatible full save through the repository contract."""
         for rule in self.storage.list():
-            if rule.category not in saved_categories:
-                self.storage._save_category(rule.category)
-                saved_categories.add(rule.category)
+            self.storage.save(rule)
 
     # ── 统计 ─────────────────────────────────────────
 

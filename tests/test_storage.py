@@ -396,3 +396,12 @@ class TestEdgeCases:
         )[0]
         d = self.store.get("special/001").to_dict()
         assert isinstance(json.dumps(d, ensure_ascii=False), str)
+
+    def test_legacy_evolution_log_string_is_decoded(self):
+        rule = Rule.from_dict({
+            "id": "legacy/001", "title": "Legacy", "content": "content",
+            "tags": '["python"]', "evolution_log": '["imported"]',
+        })
+        rule.evolve("updated")
+        assert rule.tags == ["python"]
+        assert rule.evolution_log == ["imported", "updated"]

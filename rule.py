@@ -127,14 +127,17 @@ class Rule:
             val = d.get(key)
             if isinstance(val, str):
                 d[key] = datetime.fromisoformat(val)
-        # 兼容旧数据：tags 可能是 JSON 字符串而非数组
-        tags = d.get("tags")
-        if isinstance(tags, str):
+        # 兼容旧 JSONL/SQLite：列表字段可能被保存成 JSON 字符串。
+        for field_name in ("tags", "evolution_log"):
+            value = d.get(field_name)
+            if not isinstance(value, str):
+                continue
             import json as _json
             try:
-                d["tags"] = _json.loads(tags)
+                decoded = _json.loads(value)
+                d[field_name] = decoded if isinstance(decoded, list) else []
             except (_json.JSONDecodeError, TypeError):
-                d["tags"] = []
+                d[field_name] = []
         # 兼容 v4.0：value_vector 可能是 JSON 字符串（来自 SQLite TEXT 存储）
         vv = d.get("value_vector")
         if isinstance(vv, str):

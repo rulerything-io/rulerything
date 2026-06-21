@@ -53,7 +53,6 @@ async def add_rule(req: AddRuleRequest, auth=Depends(require_write_token)):
     )
     ok, msg = state.storage.add(rule)
     if ok:
-        state.index.add(rule)
         state.logger.info("api", f"添加规则 {rule.id}", rule_id=rule.id)
         return {"ok": True, "msg": "ok"}
     else:

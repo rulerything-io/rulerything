@@ -70,6 +70,7 @@ async def _collect_learning_signals(
 async def search(req: SearchRequest):
     """搜索规则。"""
     start = time.perf_counter()
+    cache_hits_before = state.index.cache_hit_count
     value_engine = state.value_engine
     mode_engine = state.mode_engine
     profile = None  # 提前声明，避免条件分支未定义
@@ -92,7 +93,7 @@ async def search(req: SearchRequest):
                 search_type=req.search_type,
                 category=None if req.category == "all" else req.category,
                 lang=req.lang,
-                limit=10,
+                limit=req.limit,
             )
             trace = None
         else:
@@ -101,7 +102,7 @@ async def search(req: SearchRequest):
                 search_type=req.search_type,
                 category=None if req.category == "all" else req.category,
                 lang=req.lang,
-                limit=50,  # 取更多候选供价值排序
+                limit=min(100, req.limit * 5),  # 取更多候选供价值排序
             )
             sorted_results = value_engine.sort_rules(raw_results, profile)
             explored = value_engine.maybe_explore(
@@ -135,7 +136,7 @@ async def search(req: SearchRequest):
             search_type=req.search_type,
             category=None if req.category == "all" else req.category,
             lang=req.lang,
-            limit=10,
+            limit=req.limit,
         )
         trace = None
 
@@ -150,46 +151,10 @@ async def search(req: SearchRequest):
                         [r.id for r in v4_sorted], profile.name
                     )
 
-    latency_ms = (time.perf_counter() - start) * 1000
-    if hasattr(state.index, 'record_latency'):
-        state.index.record_latency(latency_ms)
-
-    # v3.0 查询日志
-    if state.storage_v2:
-        try:
-            state.storage_v2.log_query(
-                req.query, latency_ms, len(results), latency_ms < 1.0,
-                result_ids=[r.id for r in results],
-            )
-        except Exception:
-            state.logger.warn("search", "v3 查询日志写入失败")
-    state.logger.query(
-        query=req.query,
-        search_type=req.search_type,
-        latency_ms=latency_ms,
-        result_count=len(results),
-        result_ids=[r.id for r in results],
-        cache_hit=latency_ms < 1.0,
-        user_feedback=req.user_feedback,
-    )
-
-    # 熵引擎记录查询
-    if state.entropy_engine:
-        state.entropy_engine.record_query(
-            query=req.query,
-            result_ids=[r.id for r in results],
-            latency_ms=latency_ms,
-            cache_hit=latency_ms < 1.0,
-        )
-
-    # 收集反馈
-    if req.user_feedback is not None and results:
-        context = f"用户对搜索结果{'满意' if req.user_feedback else '不满意'}"
-        state.evolution.collect_feedback(results[0].id, req.user_feedback, context)
-
     # AI 兜底
     ai_delegated = False
     ai_query_id = ""
+    ai_error = False
     if not results and state.ai_bridge and state.ai_bridge.is_enabled():
         try:
             search_context = {
@@ -215,7 +180,44 @@ async def search(req: SearchRequest):
                     confidence=ai_result.get("confidence", 0.5),
                 ))
         except Exception:
+            ai_error = True
             state.logger.warn("search", "AI 兜底调用失败")
+
+    # 对外结果、日志数量和 limit 契约保持一致。
+    results = results[:req.limit]
+    latency_ms = (time.perf_counter() - start) * 1000
+    cache_hit = state.index.cache_hit_count > cache_hits_before
+    if hasattr(state.index, 'record_latency'):
+        state.index.record_latency(latency_ms)
+
+    if state.storage_v2:
+        try:
+            state.storage_v2.log_query(
+                req.query, latency_ms, len(results), cache_hit,
+                result_ids=[r.id for r in results],
+            )
+        except Exception:
+            state.logger.warn("search", "v3 查询日志写入失败")
+    state.logger.query(
+        query=req.query,
+        search_type=req.search_type,
+        latency_ms=latency_ms,
+        result_count=len(results),
+        result_ids=[r.id for r in results],
+        cache_hit=cache_hit,
+        user_feedback=req.user_feedback,
+    )
+    if state.entropy_engine:
+        state.entropy_engine.record_query(
+            query=req.query,
+            result_ids=[r.id for r in results],
+            latency_ms=latency_ms,
+            cache_hit=cache_hit,
+        )
+
+    if req.user_feedback is not None and results and not results[0].id.startswith("_ai_"):
+        context = f"用户对搜索结果{'满意' if req.user_feedback else '不满意'}"
+        state.evolution.collect_feedback(results[0].id, req.user_feedback, context)
 
     # ── 3. 采集学习信号 ──────────────────────────────
     if should_collect and value_engine and profile is not None:
@@ -225,7 +227,7 @@ async def search(req: SearchRequest):
 
     # ── 4. 监控指标 ──────────────────────────────
     if mode_engine:
-        mode_engine.record_result(is_error=False, latency_ms=latency_ms)
+        mode_engine.record_result(is_error=ai_error, latency_ms=latency_ms)
 
     # ── 5. 构建响应 ──────────────────────────────
     response = SearchResponse(
@@ -239,7 +241,7 @@ async def search(req: SearchRequest):
                 value_source=getattr(r, 'value_source', None),
                 value_provenance=getattr(r, 'value_provenance', None),
             )
-            for r in results[:5]
+            for r in results
         ],
         confidence=results[0].confidence if results else 0.0,
         rule_id=results[0].id if results else "",

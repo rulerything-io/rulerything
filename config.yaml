@@ -4,15 +4,21 @@ server:
   host: "127.0.0.1"
   port: 8001
   workers: 1
+  cors_origins: []
+  rate_limit_per_min: 1000
+
+# 1.4：唯一可写存储。JSONL 仅作为首次创建 SQLite 时的种子数据。
+storage:
+  backend: "sqlite"               # sqlite | jsonl
 
 index:
-  hot_threshold: 3         # hit_count ≥ 此值进入热缓存（v2.0 优化：从 10 降至 3）
+  hot_threshold: 10
   cold_days: 30            # 超过 N 天未访问进入冷区
   rebuild_on_start: true
 
 evolution:
   enabled: true
-  auto_apply: true
+  auto_apply: false
   min_confidence: 0.3
   batch_size: 10
 
@@ -37,7 +43,7 @@ security:
 
 # Phase 1: 熵引擎
 entropy:
-  enabled: true
+  enabled: false
   cache_hit_rate_min: 0.6
   avg_latency_max_ms: 20
   conflict_count_max: 100
@@ -48,7 +54,7 @@ entropy:
 
 # Phase 2: 规则免疫系统
 immune:
-  enabled: true
+  enabled: false
   auto_scan_interval_hours: 24
   auto_cleanup: false
   # 5 维评分权重（可调）
@@ -60,11 +66,11 @@ immune:
 
 # Phase 3: 集成协调器
 adaptive_system:
-  enabled: true
+  enabled: false
 
 # Phase 3 插件：语义搜索（独立，零核心影响）
 semantic_search:
-  enabled: true
+  enabled: false
   backend: bm25
 
 # ═══════════════════════════════════════════════════
@@ -73,7 +79,7 @@ semantic_search:
 
 value:
   # ===== 全局开关 =====
-  enabled: true
+  enabled: false
 
   # ===== 部署模式 =====
   # off | shadow | dual_write | grayscale | full
@@ -171,7 +177,7 @@ value:
 # ═══════════════════════════════════════════════════
 
 v3:
-  enabled: true
+  enabled: false                    # 扩展能力默认关闭；SQLite 核心存储不受影响
   storage: "sqlite"                # sqlite | jsonl
 
   # ── 自动依赖挖掘 ──
@@ -210,7 +216,7 @@ v3:
   # ── 自动演化 ──
   auto_evolver:
     enabled: true
-    require_approval: false        # false=自动执行
+    require_approval: true
     auto_snapshot_before_evolve: true
     max_snapshots: 50
     validation_min_samples: 10     # 统计验证最少样本数
@@ -218,7 +224,7 @@ v3:
 
   # ── AI 桥接层 ──
   ai_bridge:
-    enabled: true                  # 启用 AI 增强查询 + 自动提炼
+    enabled: false                 # 稳定版默认关闭；显式配置后启用
     provider: deepseek             # claude | openai | deepseek | local
     endpoint: ""                    # 留空则使用 provider 默认端点
     api_key_env: "DEEPSEEK_API_KEY"
