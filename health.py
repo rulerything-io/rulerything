@@ -176,14 +176,28 @@ class StartupCheck:
         return True, "ok"
 
     def _check_index_ready(self) -> Tuple[bool, str]:
-        """索引就绪检查。"""
+        """索引就绪检查。
+
+        冷启动时索引和存储均为空属于正常状态，不阻断启动。
+        仅当存储中有规则但索引未加载时才视为构建失败。
+        """
         if not self.index:
             return False, "索引未初始化"
         ready = getattr(self.index, 'is_ready', False)
-        if not ready:
-            return False, "索引未就绪"
-        rules_count = len(getattr(self.index, '_rules', []))
-        return True, f"就绪, {rules_count} 条规则"
+        if ready:
+            rules_count = len(getattr(self.index, '_rules', []))
+            return True, f"就绪, {rules_count} 条规则"
+
+        # 索引为空：检查存储中是否有规则，区分冷启动和构建失败
+        storage_has_rules = False
+        if self.storage is not None:
+            try:
+                storage_has_rules = bool(self.storage.list())
+            except Exception:
+                pass
+        if storage_has_rules:
+            return False, "索引未就绪（存储有规则但未加载到索引）"
+        return True, "索引为空（冷启动正常状态，管理循环首次 tick 后将重建）"
 
     def _check_data_dir(self) -> Tuple[bool, str]:
         """数据目录检查。"""

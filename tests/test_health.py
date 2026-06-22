@@ -380,13 +380,29 @@ class TestStartupCheckIndex:
             import shutil
             shutil.rmtree(tmpdir)
 
-    def test_index_not_ready(self):
-        """索引未就绪返回失败。"""
+    def test_index_not_ready_cold_start(self):
+        """冷启动：存储和索引均为空，视为正常。"""
         tmpdir = tempfile.mkdtemp()
         try:
             index = MagicMock()
             index.is_ready = False
             sc = StartupCheck(index=index, data_dir=tmpdir)
+            ok, msg = sc._check_index_ready()
+            assert ok is True
+            assert "冷启动" in msg
+        finally:
+            import shutil
+            shutil.rmtree(tmpdir)
+
+    def test_index_not_ready_with_storage(self):
+        """存储有规则但索引未就绪 → 构建失败，阻断启动。"""
+        tmpdir = tempfile.mkdtemp()
+        try:
+            storage = MagicMock()
+            storage.list.return_value = [{"id": "test/001"}]
+            index = MagicMock()
+            index.is_ready = False
+            sc = StartupCheck(storage=storage, index=index, data_dir=tmpdir)
             ok, msg = sc._check_index_ready()
             assert ok is False
             assert "未就绪" in msg
@@ -569,12 +585,14 @@ class TestStartupCheckEdgeCases:
             shutil.rmtree(tmpdir)
 
     def test_index_ready_is_critical(self):
-        """index_ready 是关键检查。"""
+        """index_ready 在存储有规则但索引未加载时阻断启动。"""
         tmpdir = tempfile.mkdtemp()
         try:
+            storage = MagicMock()
+            storage.list.return_value = [{"id": "test/001"}]
             index = MagicMock()
             index.is_ready = False
-            sc = StartupCheck(index=index, data_dir=tmpdir)
+            sc = StartupCheck(storage=storage, index=index, data_dir=tmpdir)
             report = sc.run_all()
             assert report["critical_failure"] is True
             assert report["can_start"] is False
