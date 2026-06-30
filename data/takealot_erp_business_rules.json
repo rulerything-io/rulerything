@@ -1,0 +1,152 @@
+[
+  {
+    "id": "takealot-erp/001",
+    "title": "订单驱动采购，PO决定发货",
+    "content": "Takealot ERP 必须区分订单需求阶段与 PO 固化阶段。合 PO 前，未退款销售订单可以产生采购需求；合 PO 后，PO 发货清单数量固定，发货、预约、云仓拣货、官方仓入库都必须以 PO 为准。",
+    "category": "takealot-erp",
+    "tags": ["takealot", "erp", "sales", "purchase", "po", "fulfillment", "核心业务规则"],
+    "confidence": 0.98,
+    "verifier": "manual",
+    "lang": "zh"
+  },
+  {
+    "id": "takealot-erp/002",
+    "title": "销售订单不是最终发货依据",
+    "content": "Takealot 销售订单是平台动态销售记录，可用于采购需求、销售统计和售后参考，但不能作为最终发货依据。订单和商品绑定关系可能因退款、取消、重新售卖或平台重新匹配而变化。",
+    "category": "takealot-erp",
+    "tags": ["takealot", "sales", "order", "fulfillment", "dynamic-order"],
+    "confidence": 0.98,
+    "verifier": "manual",
+    "lang": "zh"
+  },
+  {
+    "id": "takealot-erp/003",
+    "title": "PO生成后数量固化",
+    "content": "PO / Shipment 生成后，PO 中的商品和数量必须全数送至 Takealot 官方仓。后续客户退款、取消或平台重新匹配用户订单，都不能减少已生成 PO 的发货数量。",
+    "category": "takealot-erp",
+    "tags": ["takealot", "po", "shipment", "locked-quantity", "blocker"],
+    "confidence": 0.99,
+    "verifier": "manual",
+    "lang": "zh"
+  },
+  {
+    "id": "takealot-erp/004",
+    "title": "订单只能表达参与PO需求形成，不能强绑定PO履约",
+    "content": "ERP 可以记录某个订单需求参与了某个 PO 的需求形成，但不应把销售订单和 PO 做成强一对一履约绑定。PO Item 才是发往 Takealot 官方仓的确定商品清单。",
+    "category": "takealot-erp",
+    "tags": ["takealot", "po", "sales", "demand", "relationship"],
+    "confidence": 0.97,
+    "verifier": "manual",
+    "lang": "zh"
+  },
+  {
+    "id": "takealot-erp/005",
+    "title": "合PO前采购需求必须排除无效订单",
+    "content": "生成采购建议时，必须排除已退款订单、已取消订单、官方仓内部流转订单、云仓库存已覆盖订单，以及已经进入 PO 固化阶段不应重复采购的订单。",
+    "category": "takealot-erp",
+    "tags": ["takealot", "purchase", "demand-pool", "refund", "cancelled", "validation"],
+    "confidence": 0.97,
+    "verifier": "manual",
+    "lang": "zh"
+  },
+  {
+    "id": "takealot-erp/006",
+    "title": "采购建议应从需求池生成",
+    "content": "采购建议单不应直接粗暴读取销售订单生成，而应从需求池生成。需求池可包含未退款客户订单、人工备货需求、安全库存补货和人工调整需求。",
+    "category": "takealot-erp",
+    "tags": ["takealot", "purchase", "demand-pool", "planning"],
+    "confidence": 0.95,
+    "verifier": "manual",
+    "lang": "zh"
+  },
+  {
+    "id": "takealot-erp/007",
+    "title": "采购建议数量计算公式",
+    "content": "采购建议数量应按：未退款订单需求 + 备货需求 - 云仓可用库存 - 已采购在途数量 - 已分配采购数量。该规则用于避免重复采购和漏采。",
+    "category": "takealot-erp",
+    "tags": ["takealot", "purchase", "quantity", "formula", "inventory"],
+    "confidence": 0.95,
+    "verifier": "manual",
+    "lang": "zh"
+  },
+  {
+    "id": "takealot-erp/008",
+    "title": "同店铺同官仓订单才可合并为同一PO",
+    "content": "合并 PO 时，应以同一店铺、同一 Fulfilment DC / 官仓为核心维度。不同店铺或不同官仓的订单需求不应直接合并为同一个 PO。",
+    "category": "takealot-erp",
+    "tags": ["takealot", "po", "fulfilment-dc", "store", "merge"],
+    "confidence": 0.96,
+    "verifier": "manual",
+    "lang": "zh"
+  },
+  {
+    "id": "takealot-erp/009",
+    "title": "备货需求可以与客户订单一起形成PO",
+    "content": "ERP 支持人工增加备货需求。备货需求可以单独形成 PO，也可以与有效客户订单需求一起合并为同一个 PO；PO 生成后同样遵守数量固化规则。",
+    "category": "takealot-erp",
+    "tags": ["takealot", "po", "stock-buffer", "manual-demand"],
+    "confidence": 0.94,
+    "verifier": "manual",
+    "lang": "zh"
+  },
+  {
+    "id": "takealot-erp/010",
+    "title": "Product Label是全平台唯一不可变商品条码",
+    "content": "Product Label / MP Takealot Barcode 是平台生成的全平台唯一且不可变商品条码，应用于商品识别、订单匹配、PO Item 匹配和采购配置映射。它优先于 SKU。",
+    "category": "takealot-erp",
+    "tags": ["takealot", "product-label", "mp-barcode", "identity", "barcode"],
+    "confidence": 0.98,
+    "verifier": "manual",
+    "lang": "zh"
+  },
+  {
+    "id": "takealot-erp/011",
+    "title": "TSIN店铺内唯一但多店铺可能共用",
+    "content": "TSIN 在单个店铺内可作为商品识别字段，但多店铺场景下 TSIN 可能共用，因此跨店铺唯一性必须结合 store_id，不能单独使用 TSIN 做全局唯一键。",
+    "category": "takealot-erp",
+    "tags": ["takealot", "tsin", "product-identity", "multi-store"],
+    "confidence": 0.96,
+    "verifier": "manual",
+    "lang": "zh"
+  },
+  {
+    "id": "takealot-erp/012",
+    "title": "SKU仅作为商家内部码和搜索辅助",
+    "content": "SKU 是商家可自行编辑的内部码，可用于搜索、辅助匹配和人工识别，但不能作为不可变唯一主键，也不能替代 Product Label 或平台生成标识。",
+    "category": "takealot-erp",
+    "tags": ["takealot", "sku", "product-identity", "search-only"],
+    "confidence": 0.96,
+    "verifier": "manual",
+    "lang": "zh"
+  },
+  {
+    "id": "takealot-erp/013",
+    "title": "采购配置必须支持单品与组合映射",
+    "content": "采购配置需要支持单品、多件装和组合商品映射。例如 Takealot A × 1 可以等于 1688 A1 × 1，也可以等于 1688 A1 × 1 + A2 × 2 + A3 × 1。",
+    "category": "takealot-erp",
+    "tags": ["takealot", "1688", "purchase-mapping", "bundle", "component"],
+    "confidence": 0.95,
+    "verifier": "manual",
+    "lang": "zh"
+  },
+  {
+    "id": "takealot-erp/014",
+    "title": "1688采购订单同步先只读后自动化",
+    "content": "1688 API 接入初期应以采购订单、采购明细、物流和签收状态同步为主。自动下单、自动付款等操作应在人工流程和映射规则稳定后再逐步上线。",
+    "category": "takealot-erp",
+    "tags": ["takealot", "1688", "purchase", "api", "read-only-first"],
+    "confidence": 0.93,
+    "verifier": "manual",
+    "lang": "zh"
+  },
+  {
+    "id": "takealot-erp/015",
+    "title": "Takealot API接入初期保持只读",
+    "content": "Takealot 真实店铺接入初期，ERP 只能读取 Seller、Offer、Sales、Shipments、Returns 等数据，不得修改店铺数据。写操作必须在功能确认、权限和审计完善后再开放。",
+    "category": "takealot-erp",
+    "tags": ["takealot", "api", "read-only", "safety", "blocker"],
+    "confidence": 0.98,
+    "verifier": "manual",
+    "lang": "zh"
+  }
+]
