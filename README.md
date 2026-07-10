@@ -1,114 +1,373 @@
 <p align="center">
   <h1 align="center">Rulerything</h1>
-  <p align="center"><strong>一切皆规则</strong></p>
+  <p align="center">
+    <strong>The AI Context Engine for coding assistants.</strong>
+  </p>
+  <p align="center">
+    Automatically discover, compile, and inject the right engineering rules, project standards, and execution context into every AI request.
+  </p>
 </p>
 
 <p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License"></a>
-  <a href="./skill/README.md"><img src="https://img.shields.io/badge/Claude%20Code-Skill-blueviolet" alt="Claude Code Skill"></a>
+  <a href="#quick-start">Quick Start</a> ·
+  <a href="#why-rulerything">Why</a> ·
+  <a href="#how-it-works">How It Works</a> ·
+  <a href="#claude-code-integration">Claude Code</a> ·
+  <a href="#architecture">Architecture</a> ·
+  <a href="#roadmap">Roadmap</a>
+</p>
+
+<p align="center">
+  <img alt="License" src="https://img.shields.io/badge/license-Apache%202.0-blue">
+  <img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-blue">
+  <img alt="Status" src="https://img.shields.io/badge/status-active-brightgreen">
+  <img alt="AI Context Engine" src="https://img.shields.io/badge/AI-Context%20Engine-purple">
 </p>
 
 ---
 
-## 规则在进化
+## What is Rulerything?
 
-传统的规则是静态的。写下来，落灰，过时，被遗忘。
+Rulerything is a **self-evolving AI Context Engine** designed to give AI coding assistants a deterministic engineering knowledge layer.
 
-**Rulerything 不同。**
+Instead of sending vague prompts directly to Claude, GPT, Copilot, or other LLMs, Rulerything first analyzes the request, retrieves the relevant rules, assembles the right context, and then helps the AI execute with clearer boundaries, standards, and project knowledge.
 
-规则可以**学习**。它们观察自己被执行的每一次结果，发现冲突和冗余，在人类工程师的监督下自我优化。
-
-规则在**进化**。
-
-这就是 Rulerything。
-
-不是为了消灭规则的复杂性——而是让复杂性变得**有序、透明、有生命**。
-
-从代码到法律，从算法到伦理，Rulerything 正在构建一个**万物皆可规则**的世界。
-
-因为世界的本质，从来都是规则。
-
-只是现在，我们终于有了驾驭它们的方式。
+> Stop repeating prompts.  
+> Stop losing project context.  
+> Let AI follow your engineering standards automatically.
 
 ---
 
-## What is Rulerything
+## Why Rulerything?
 
-Rulerything 是一个**自演进规则知识库引擎**。它存储、索引、检索并自主进化编程规则，覆盖 30+ 技术分类。设计为 AI 编程助手（Claude Code、Copilot 等）的**确定性知识层**。
+Modern AI coding assistants are powerful, but they share one major weakness:
 
-- **Smart Search** — 语义 + 分类混合检索
-- **Auto-Evolution** — 规则随使用数据自我生长和优化
-- **Immune System** — 冲突检测、质量评分、自动清理
-- **AI Bridge** — LLM 驱动的规则提案和知识缺口检测
-- **Self-Adaptive** — 无需人工干预的性能自调优
+> They do not automatically know your project rules.
+
+When you ask:
+
+```text
+Write a login API.
+```
+
+The model may need to guess:
+
+- Which framework should be used?
+- Which security rules apply?
+- Which database conventions matter?
+- Which team coding standards should be followed?
+- Which response format is expected?
+- Which project-specific constraints must not be violated?
+
+Every missing piece of context increases uncertainty.
+
+Every uncertainty increases hallucination.
+
+Rulerything solves this by turning implicit engineering knowledge into an executable context layer.
+
+---
+
+## The Core Idea
+
+Traditional AI workflow:
+
+```text
+User Request
+      ↓
+LLM guesses missing context
+      ↓
+Unstable output
+```
+
+Rulerything workflow:
+
+```text
+User Request
+      ↓
+Intent Detection
+      ↓
+Rule Matching
+      ↓
+Context Assembly
+      ↓
+Prompt Compilation
+      ↓
+LLM executes with project-aware context
+```
+
+The model no longer receives just a prompt.
+
+It receives a complete execution context.
+
+---
+
+## How It Works
+
+```mermaid
+flowchart TD
+    A[User Request] --> B[Intent Detection]
+    B --> C[Scenario Recognition]
+    C --> D[Rule Matching]
+    D --> E[Context Assembly]
+    E --> F[Prompt Compilation]
+    F --> G[Claude / GPT / Copilot]
+    G --> H[Execution Feedback]
+    H --> I[Rule Evaluation]
+    I --> J[Human Review]
+    J --> K[Rule Evolution]
+    K --> D
+```
+
+Rulerything acts as the missing execution layer between human intent and LLM output.
+
+---
+
+## What Makes It Different?
+
+Rulerything is not just a prompt library.
+
+It is not just AI memory.
+
+It is not just RAG.
+
+It is a context engine that decides **which rules should be loaded for each request**.
+
+| Approach | Limitation | Rulerything |
+|---|---|---|
+| Prompt Library | Manual copy and paste | Automatically loads relevant rules |
+| Cursor Rules | Mostly static project instructions | Dynamic retrieval and evolution |
+| Claude Memory | Broad personal memory | Project-aware engineering context |
+| RAG | Retrieves documents | Retrieves executable rules and standards |
+| System Prompt | Grows too large and stale | Loads only what is needed |
+| Checklist | Human has to remember it | AI receives it before execution |
+
+**Prompt engineering is not enough. Context engineering is the next layer.**
+
+---
+
+## Core Capabilities
+
+### Smart Context Search
+
+Hybrid search across engineering rules using:
+
+- Semantic matching
+- Category matching
+- Tag matching
+- Exact search
+- Prefix search
+- Smart search contracts
+
+Use it to retrieve the right engineering knowledge before an AI assistant answers.
+
+---
+
+### Self-Evolving Rules
+
+Rules do not have to remain static.
+
+Rulerything can observe usage signals, detect weak rules, identify redundancy, and propose improvements.
+
+The evolution loop is designed around human supervision:
+
+```text
+Observe → Measure → Detect → Propose → Review → Promote
+```
+
+AI assists.
+
+Humans decide.
+
+---
+
+### Engineering Immune System
+
+Rulerything includes a quality-control layer that helps detect:
+
+- Duplicated rules
+- Conflicting rules
+- Outdated knowledge
+- Low-quality rules
+- Redundant instructions
+- Unused or stale rules
+
+Each rule can be scored across multiple quality dimensions.
+
+---
+
+### AI Bridge
+
+Optional LLM integration enables:
+
+- Rule proposal
+- Knowledge gap detection
+- Rule summarization
+- Auto-categorization
+- Rule optimization
+- Rule ingestion from queries
+
+The core search engine works locally without an API key.
+
+Advanced evolution features can use Claude, OpenAI, DeepSeek, or local models.
+
+---
+
+### Self-Adaptive Runtime
+
+Rulerything can monitor and optimize:
+
+- Search latency
+- Cache hit rates
+- Index performance
+- Conflict ratios
+- Storage behavior
+- Retrieval quality
+
+This allows the system to improve not only its rules, but also its own runtime behavior.
+
+---
 
 ## Quick Start
 
+### Install
+
 ```bash
-# Install the project
 pip install .
+```
 
-# Start the server
+### Start the server
+
+```bash
 rulerything-server
+```
 
-# Search the built-in rule base
+The server starts at:
+
+```text
+http://127.0.0.1:8001
+```
+
+### Search the built-in rule base
+
+```bash
 rulerything search "SQL injection" --type smart
 ```
 
-服务启动在 `http://127.0.0.1:8001`。
-
-1.4 默认只启用可信核心：SQLite、索引、严格搜索和 API。AI、自动演化、
-价值层与后台自适应模块需要在 `config.yaml` 中显式开启。
-
-> **Claude Code 用户？** 直接跳到 [`skill/` 目录](./skill/README.md) 开始集成。不需要关心服务端细节。
-
-## Usage
+### Other search modes
 
 ```bash
-# Search rules
 rulerything search "Performance Optimization Guidelines" --type exact
 rulerything search "Performance" --type prefix
 rulerything search "python" --type tag
-
-# Smart search is explicit and may combine title, tag and content matches
 rulerything search "Python async performance optimization" --type smart
+```
 
-# List rules by category
+### List rules by category
+
+```bash
 rulerything list --category security
+```
 
-# View rule details
+### View rule details
+
+```bash
 rulerything get security/001
 ```
 
-### Integration
+---
 
-**Claude Code** — 推荐使用 `skill/` 目录下的专用集成包：
+## Claude Code Integration
+
+Rulerything is designed to work well with Claude Code.
+
+### One-command setup
 
 ```bash
-# 一键安装到你的 Claude Code 项目
 python skill/install.py --project /path/to/your/project --setup-hook
 ```
 
-或者手动添加到项目的 `CLAUDE.md`：
+### Manual setup
 
-```markdown
-When answering technical questions, query the rule base:
+Add this to your project `CLAUDE.md`:
+
+```text
+When answering technical questions, query the rule base first:
+
 python /path/to/rulerything/skill/rule_helper.py smart "<your question>"
 ```
 
-详见 [`skill/` 文档](./skill/README.md)。
+This makes Claude Code consult your engineering rule base before answering.
+
+---
+
+## Example
+
+### Without Rulerything
+
+```text
+User:
+Write a REST login API.
+
+LLM has to guess:
+- Framework
+- Security model
+- Naming conventions
+- Error format
+- Logging standard
+- Validation rules
+
+Result:
+Inconsistent output.
+```
+
+### With Rulerything
+
+```text
+User:
+Write a REST login API.
+
+Rulerything:
+- Detects API development intent
+- Loads REST rules
+- Loads authentication rules
+- Loads project conventions
+- Loads security constraints
+- Assembles execution context
+
+LLM:
+Produces output aligned with the rule base.
+```
+
+---
+
+## Built-in Knowledge
+
+Rulerything includes:
+
+- **994 built-in engineering rules**
+- **34 technology categories**
+
+Categories include:
+
+```text
+ai api cpp css database devops docker dotnet git go java javascript lua
+mobile nodejs pattern performance philosophy php process python react ruby
+rust security shell test typescript vue zig
+```
+
+---
 
 ## Architecture
 
-```
+```text
 main.py                → Side-effect-free FastAPI application factory
 ├── core/repository.py → Single writable repository boundary
-├── index.py           → exact / prefix / tag / smart contracts
+├── index.py           → exact / prefix / tag / smart search contracts
 ├── storage_v2.py      → SQLite runtime store
-├── entropy_engine.py  → Phase 1: Performance monitoring & tuning
-├── immune_system.py   → Phase 2: Quality & conflict detection
-├── adaptive_system.py → Phase 3: Self-adaptive orchestration
-├── ai_bridge.py       → LLM-powered rule proposal & gap detection
+├── entropy_engine.py  → Performance monitoring and tuning
+├── immune_system.py   → Quality scoring and conflict detection
+├── adaptive_system.py → Self-adaptive orchestration
+├── ai_bridge.py       → LLM-powered proposal and gap detection
 ├── auto_evolver.py    → Automated rule evolution with validation
 ├── auto_ingest.py     → Automated rule ingestion from queries
 ├── gap_detector.py    → Knowledge gap identification
@@ -116,91 +375,186 @@ main.py                → Side-effect-free FastAPI application factory
 └── semantic_plugin/   → Optional semantic search plugin
 ```
 
-### Core Modules
+High-level runtime:
+
+```mermaid
+flowchart LR
+    U[User / AI Assistant] --> Q[Query]
+    Q --> I[Index]
+    Q --> R[Rule Engine]
+    R --> C[Context Assembly]
+    C --> P[Prompt Compiler]
+    P --> L[LLM]
+    L --> F[Feedback]
+    F --> M[Immune System]
+    M --> E[Auto Evolution]
+    E --> R
+```
+
+---
+
+## Core Modules
 
 | Module | Description |
-|--------|-------------|
-| **repository** | Selects exactly one writable backend; JSONL only seeds an empty SQLite database |
-| **storage_v2** | SQLite runtime storage with transactions, snapshots and hot/cold tiering |
-| **entropy_engine** | Monitors cache hit rates, latency, conflict ratios; triggers auto-tuning |
-| **immune_system** | 5-dimension quality scoring; scans conflicts, staleness, redundancy |
-| **adaptive_system** | Coordinates all subsystems; circuit-breaker pattern for fault isolation |
-| **ai_bridge** | Optional LLM integration for rule proposal, ingestion, gap analysis |
+|---|---|
+| `repository` | Selects exactly one writable backend; JSONL only seeds an empty SQLite database |
+| `storage_v2` | SQLite runtime storage with transactions, snapshots, and hot/cold tiering |
+| `index` | Search contracts for exact, prefix, tag, and smart retrieval |
+| `entropy_engine` | Monitors cache hit rates, latency, and conflict ratios; triggers auto-tuning |
+| `immune_system` | Scores rule quality and scans conflicts, staleness, and redundancy |
+| `adaptive_system` | Coordinates subsystems with circuit-breaker isolation |
+| `ai_bridge` | Optional LLM integration for rule proposal, ingestion, and gap analysis |
+| `auto_evolver` | Validates and applies rule improvements under configured thresholds |
 
-## Built-in Rules
-
-**994 rules across 34 categories:**
-
-`ai` `api` `cpp` `css` `database` `devops` `docker` `dotnet` `git` `go`
-`java` `javascript` `lua` `mobile` `nodejs` `pattern` `performance`
-`philosophy` `php` `process` `python` `react` `ruby` `rust` `security`
-`shell` `test` `typescript` `vue` `zig` …and more.
+---
 
 ## Configuration
 
-编辑 `config.yaml` 控制：
+Edit `config.yaml` to control runtime behavior.
 
-- `server.host/port` — HTTP server binding
-- `storage.backend` — the single writable backend (`sqlite` or `jsonl`)
-- `index.*` — cache thresholds, rebuild schedule
-- `evolution.*` — auto-apply, confidence thresholds
-- `immune.*` — quality scoring weights
+Common configuration areas:
 
-环境变量 `RULERYTHING_CONFIG`、`RULERYTHING_DATA_DIR` 和
-`RULERYTHING_LOG_DIR` 可分别覆盖配置、运行数据和日志目录。
+| Config | Purpose |
+|---|---|
+| `server.host` / `server.port` | HTTP server binding |
+| `storage.backend` | Single writable backend: `sqlite` or `jsonl` |
+| `index.*` | Cache thresholds and rebuild schedule |
+| `evolution.*` | Auto-apply behavior and confidence thresholds |
+| `immune.*` | Quality scoring weights |
+| `ai_bridge.*` | Provider, model, and API key environment variable |
 
-### API Key 配置（可选）
-
-Rulerything 的**基础搜索功能无需任何 API Key**，核心检索使用本地 BM25 算法。
-
-以下高级功能需要 LLM API Key：
-
-| 功能 | 是否需要 Key | 说明 |
-|------|------------|------|
-| 智能搜索（smart search） | ❌ 不需要 | 本地语义检索 |
-| 规则自动提炼 | ✅ 需要 | 从查询中自动生成新规则 |
-| 知识缺口检测 | ✅ 需要 | 发现规则库缺失的知识领域 |
-| 规则自动演化 | ✅ 需要 | AI 评分和优化现有规则 |
-
-设置方式：
+Environment overrides:
 
 ```bash
-# 方式一：环境变量
-export DEEPSEEK_API_KEY="sk-xxxx"     # DeepSeek (默认)
-# 或
-export ANTHROPIC_API_KEY="sk-xxxx"    # Claude
-# 或
-export OPENAI_API_KEY="sk-xxxx"       # OpenAI
-
-# 方式二：.env 文件
-echo "DEEPSEEK_API_KEY=sk-xxxx" > .env
+export RULERYTHING_CONFIG=/path/to/config.yaml
+export RULERYTHING_DATA_DIR=/path/to/data
+export RULERYTHING_LOG_DIR=/path/to/logs
 ```
 
-支持的 Provider 在 `config.yaml` 中切换：
+---
+
+## API Keys
+
+Basic search requires **no API key**.
+
+The core retrieval engine uses local search.
+
+Advanced AI features require an LLM provider key.
+
+| Feature | API Key Required | Notes |
+|---|---:|---|
+| Smart search | No | Local retrieval |
+| Rule auto-extraction | Yes | Generate candidate rules from queries |
+| Knowledge gap detection | Yes | Detect missing knowledge areas |
+| Rule auto-evolution | Yes | AI-assisted scoring and optimization |
+
+Supported providers:
+
+```bash
+export DEEPSEEK_API_KEY="sk-xxxx"
+export ANTHROPIC_API_KEY="sk-xxxx"
+export OPENAI_API_KEY="sk-xxxx"
+```
+
+Example `config.yaml`:
 
 ```yaml
 ai_bridge:
-  provider: deepseek   # 可选: claude | openai | deepseek | local
+  provider: deepseek
   api_key_env: "DEEPSEEK_API_KEY"
 ```
 
-> 注意：`.env` 文件已在 `.gitignore` 中，不会提交到 GitHub。
+`.env` is ignored by Git and should not be committed.
+
+---
 
 ## Use Cases
 
-- **AI 编程助手知识层** — 让 Claude/Copilot 从经过筛选的规则库回答
-- **团队编码规范** — 维护一套共享的、持续进化的规则集
-- **Code Review 检查清单** — PR 审查时可检索的规则查询
-- **新成员 onboarding** — 浏览特定技术栈的最佳实践
-- **企业知识管理** — 私有部署 + 定制规则包
+### AI Coding Assistant Knowledge Layer
+
+Give Claude Code, Copilot, GPT, and other assistants a deterministic rule layer before they answer.
+
+### Team Coding Standards
+
+Maintain a shared, searchable, evolving rule base for your engineering team.
+
+### Code Review Checklist
+
+Use rules as searchable review criteria for pull requests.
+
+### Onboarding
+
+Help new developers quickly understand project conventions and technology-specific best practices.
+
+### Enterprise Knowledge Management
+
+Deploy a private engineering rule base with custom standards, architecture rules, security policies, and compliance constraints.
+
+---
+
+## Roadmap
+
+- [ ] Multi-project context profiles
+- [ ] Rule package system
+- [ ] Organization-level governance
+- [ ] MCP integration
+- [ ] IDE plugins
+- [ ] Context marketplace
+- [ ] Rule evaluation benchmark
+- [ ] Team approval workflow
+- [ ] Multi-agent collaboration
+- [ ] Cloud and self-hosted deployment templates
+
+---
+
+## Project Philosophy
+
+Rules are evolving.
+
+Traditional rules are static.
+
+They are written once, forgotten, and eventually become obsolete.
+
+Rulerything is different.
+
+Rules can learn.
+
+They observe every execution, detect conflicts, identify redundancy, and improve under human supervision.
+
+The goal is not to eliminate complexity.
+
+The goal is to make complexity ordered, transparent, and alive.
+
+From software engineering to law, from algorithms to governance, from business workflows to AI systems, Rulerything aims to build a world where everything can be expressed, managed, and evolved as executable rules.
+
+> The nature of the world has always been rules.  
+> Only now do we finally have a way to orchestrate them.
+
+---
+
+## Contributing
+
+Contributions are welcome.
+
+You can help by:
+
+- Adding new engineering rules
+- Improving rule categories
+- Testing integrations
+- Reporting conflicts or stale rules
+- Improving documentation
+- Building plugins
+
+Before contributing, please make sure new rules are:
+
+- Clear
+- Actionable
+- Non-duplicated
+- Properly categorized
+- Useful for AI-assisted engineering workflows
+
+---
 
 ## License
 
 Apache 2.0. See [LICENSE](LICENSE).
-
----
-
-<p align="center">
-  <em>世界的本质，从来都是规则。</em><br>
-  <em>只是现在，我们终于有了驾驭它们的方式。</em>
-</p>
