@@ -137,6 +137,7 @@ async def search(req: SearchRequest):
             category=None if req.category == "all" else req.category,
             lang=req.lang,
             limit=req.limit,
+            explain=req.explain,
         )
         trace = None
 
@@ -236,6 +237,9 @@ async def search(req: SearchRequest):
                 title=r.title, content=r.content, id=r.id,
                 confidence=r.confidence, category=r.category, tags=r.tags,
                 lang=r.lang,
+                score_details=getattr(r, '_score_details', None),
+                matched_terms=getattr(r, '_matched_terms', None),
+                reason=getattr(r, '_reason', None),
                 value_vector=getattr(r, 'value_vector', None),
                 value_confidence=getattr(r, 'value_confidence', None),
                 value_source=getattr(r, 'value_source', None),

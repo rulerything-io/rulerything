@@ -17,6 +17,7 @@ class SearchRequest(BaseModel):
     brief: bool = False                  # v4.0 简短决策追溯
     selected_rule_id: Optional[str] = None  # v4.0 用户采纳的规则 ID
     session_id: Optional[str] = None     # v4.0 session 标识（灰度分配/A/B 测试）
+    explain: bool = False                # 返回评分细节（score_details, matched_terms）
 
 
 class SearchResult(BaseModel):
@@ -27,6 +28,10 @@ class SearchResult(BaseModel):
     category: str
     tags: list
     lang: str = "zh"
+    # 评分细节（explain=true 时返回）
+    score_details: Optional[Dict[str, float]] = None
+    matched_terms: Optional[List[str]] = None
+    reason: Optional[str] = None
     # v4.0 价值层字段（仅在 value.enabled=true 时返回）
     value_vector: Optional[Dict[str, float]] = None
     value_confidence: Optional[float] = None

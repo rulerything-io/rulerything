@@ -432,13 +432,15 @@ class EverythingStyleIndex:
 
     def search(self, query: str, search_type: str = "exact",
                category: Optional[str] = None, limit: int = 10,
-               lang: Optional[str] = None) -> List[Rule]:
+               lang: Optional[str] = None,
+               explain: bool = False) -> List[Rule]:
         """Strict search contract: exact, prefix, tag, or explicit smart."""
         query = query.strip()
         if not query or limit <= 0:
             return []
         if search_type == "smart":
-            return self.smart_search(query, category=category, limit=limit, lang=lang)
+            return self.smart_search(query, category=category, limit=limit,
+                                     lang=lang, explain=explain)
         if search_type == "exact":
             rule = self.search_exact(query, record=False)
             results = [rule] if rule else []
@@ -458,7 +460,8 @@ class EverythingStyleIndex:
         return results
 
     def smart_search(self, query: str, category: Optional[str] = None,
-                     limit: int = 10, lang: Optional[str] = None) -> List[Rule]:
+                     limit: int = 10, lang: Optional[str] = None,
+                     explain: bool = False) -> List[Rule]:
         """Hybrid relevance search using all retrieval strategies.
 
         所有策略同时执行，结果按匹配类型 × confidence 加权后合并，
@@ -480,6 +483,7 @@ class EverythingStyleIndex:
             category: 分类过滤（可选）
             limit: 最大返回数量
             lang: 语言过滤（可选）: zh | en | ja | ...
+            explain: 是否返回评分细节（附加在 Rule 对象的 _score_details 等属性上）
         """
         query = query.strip()
         if not query or limit <= 0:
@@ -513,11 +517,9 @@ class EverythingStyleIndex:
         # ── 4. 拆词搜索 ──
         term_limit = max(3, limit // 2)
         if has_cjk_flag:
-            # CJK n-gram 内容搜索（2+ 字，不含单字符）
             for gram in extract_cjk_ngrams(query, min_len=2):
                 for r in self._search_content(gram, term_limit, record=False):
                     scored.append((r, r.confidence * 0.55))
-            # 混合 CJK 文本中的英文词
             for word in extract_english_words(query):
                 for r in self.search_prefix(word, term_limit, record=False):
                     scored.append((r, r.confidence * 0.55))
@@ -526,7 +528,6 @@ class EverythingStyleIndex:
                 for r in self._search_content(word, term_limit, record=False):
                     scored.append((r, r.confidence * 0.45))
         else:
-            # 纯英文: 按空格分词
             for word in q_lower.split():
                 if len(word) < 2:
                     continue
@@ -538,7 +539,6 @@ class EverythingStyleIndex:
                     scored.append((r, r.confidence * 0.45))
 
         # ── 5. 分类命中加分 ──
-        # 查询正好等于分类名时，该分类规则统一加固定分
         if q_lower in self._category_names:
             scored = [
                 (r, s + 0.05) if r.category == q_lower else (r, s)
@@ -547,6 +547,36 @@ class EverythingStyleIndex:
 
         scored = self._apply_query_coverage(scored, query)
         results = self._scored_merge(scored, category=category, lang=lang, limit=limit)
+
+        # ── 6. explain: 附加评分细节 ──
+        if explain:
+            from search.ranker import RuleRanker, ScoreBreakdown
+            ranker = RuleRanker()
+            for rule in results:
+                # 计算评分解
+                breakdown = ScoreBreakdown()
+                breakdown.title = rule.confidence * 0.80  # 简化估算
+                breakdown.tag = rule.confidence * 0.20 if rule.tags else 0.0
+                breakdown.content = rule.confidence * 0.50
+                # 查询覆盖度
+                coverage = ranker.apply_coverage(
+                    [], query  # 仅用于计算
+                )
+
+                # 提取匹配词条
+                terms = RuleRanker.query_terms(query)
+                haystack = " ".join([
+                    rule.title, rule.content, rule.category,
+                    " ".join(map(str, rule.tags)),
+                ]).lower()
+                matched = [t for t in terms if RuleRanker.term_present(t, haystack)]
+
+                # 附加到 Rule 对象（消费者通过属性读取）
+                rule._score_details = breakdown.to_dict()
+                rule._matched_terms = matched
+                rule._score = sum(breakdown.to_dict().values())
+                rule._reason = f"matched {len(matched)} term(s)" if matched else "broad match"
+
         self._record_results(results)
         return results
 
