@@ -346,6 +346,73 @@ class EverythingStyleIndex:
         sorted_ = sorted(best.values(), key=lambda x: (x[1], x[0].confidence), reverse=True)
         return [r for r, _ in sorted_[:limit]]
 
+    @staticmethod
+    def _query_terms(query: str) -> Set[str]:
+        """Return useful English query terms for coverage-based ranking."""
+        stopwords = {
+            "a", "an", "and", "are", "as", "at", "be", "by", "for", "from",
+            "how", "in", "into", "is", "it", "of", "on", "or", "the", "to",
+            "use", "using", "with", "without", "best", "practice", "practices",
+            "rule", "rules", "guide", "guideline", "guidelines",
+        }
+        return {
+            word.lower()
+            for word in extract_english_words(query)
+            if len(word) >= 3 and word.lower() not in stopwords
+        }
+
+    @staticmethod
+    def _term_present(term: str, haystack: str) -> bool:
+        """Match exact terms and simple plural/suffix variants."""
+        if term in haystack:
+            return True
+        if term.endswith("y") and f"{term[:-1]}ies" in haystack:
+            return True
+        if f"{term}s" in haystack or f"{term}es" in haystack:
+            return True
+        return False
+
+    def _apply_query_coverage(self, scored: List[Tuple[Rule, float]],
+                              query: str) -> List[Tuple[Rule, float]]:
+        """Demote results that only match one generic term from a multi-term query."""
+        terms = self._query_terms(query)
+        if len(terms) < 2:
+            return scored
+
+        adjusted: List[Tuple[Rule, float]] = []
+        for rule, score in scored:
+            tag_scope = {str(t).lower() for t in rule.tags}
+            scope_hit = rule.category.lower() in terms or bool(tag_scope & terms)
+            haystack = " ".join([
+                rule.title,
+                rule.content,
+                rule.category,
+                " ".join(map(str, rule.tags)),
+            ]).lower()
+            title_haystack = rule.title.lower()
+            matched = sum(1 for term in terms if self._term_present(term, haystack))
+            title_matched = sum(1 for term in terms if self._term_present(term, title_haystack))
+
+            if matched == 0:
+                multiplier = 0.20
+            elif matched < min(2, len(terms)) and not scope_hit:
+                multiplier = 0.05
+            else:
+                coverage = matched / len(terms)
+                multiplier = 0.35 + 0.65 * coverage
+
+            # Category/tag hits are often the strongest signal of technical scope.
+            if scope_hit:
+                multiplier += 0.10
+            elif title_matched == 0:
+                # Long reference pages can mention every query term in passing.
+                # Prefer rules whose title or tags describe the requested topic.
+                multiplier *= 0.55
+
+            adjusted.append((rule, score * min(multiplier, 1.15)))
+
+        return adjusted
+
     def search(self, query: str, search_type: str = "exact",
                category: Optional[str] = None, limit: int = 10,
                lang: Optional[str] = None) -> List[Rule]:
@@ -427,29 +494,30 @@ class EverythingStyleIndex:
                 scored.append((r, r.confidence * 0.50))
 
         # ── 4. 拆词搜索 ──
+        term_limit = max(3, limit // 2)
         if has_cjk_flag:
             # CJK n-gram 内容搜索（2+ 字，不含单字符）
             for gram in extract_cjk_ngrams(query, min_len=2):
-                for r in self._search_content(gram, limit // 2, record=False):
+                for r in self._search_content(gram, term_limit, record=False):
                     scored.append((r, r.confidence * 0.55))
             # 混合 CJK 文本中的英文词
             for word in extract_english_words(query):
-                for r in self.search_prefix(word, limit // 3, record=False):
+                for r in self.search_prefix(word, term_limit, record=False):
                     scored.append((r, r.confidence * 0.55))
-                for r in self.search_by_tag(word, limit // 3, record=False):
+                for r in self.search_by_tag(word, term_limit, record=False):
                     scored.append((r, r.confidence * 0.50))
-                for r in self._search_content(word, limit // 3, record=False):
+                for r in self._search_content(word, term_limit, record=False):
                     scored.append((r, r.confidence * 0.45))
         else:
             # 纯英文: 按空格分词
             for word in q_lower.split():
                 if len(word) < 2:
                     continue
-                for r in self.search_prefix(word, limit // 3, record=False):
+                for r in self.search_prefix(word, term_limit, record=False):
                     scored.append((r, r.confidence * 0.55))
-                for r in self.search_by_tag(word, limit // 3, record=False):
+                for r in self.search_by_tag(word, term_limit, record=False):
                     scored.append((r, r.confidence * 0.50))
-                for r in self._search_content(word, limit // 3, record=False):
+                for r in self._search_content(word, term_limit, record=False):
                     scored.append((r, r.confidence * 0.45))
 
         # ── 5. 分类命中加分 ──
@@ -460,6 +528,7 @@ class EverythingStyleIndex:
                 for r, s in scored
             ]
 
+        scored = self._apply_query_coverage(scored, query)
         results = self._scored_merge(scored, category=category, lang=lang, limit=limit)
         self._record_results(results)
         return results
