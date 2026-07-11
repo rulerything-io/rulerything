@@ -312,14 +312,63 @@ def cmd_health(index, storage):
     print(f"  分类: {', '.join(stg_stats['categories'])}")
     print(f"  热缓存: {idx_stats['hot_cache_size']} 条")
     print(f"  冷区: {idx_stats['cold_count']} 条")
+    print(f"  缓存驱逐: {idx_stats.get('cache_eviction_count', 'N/A')} 次")
     print(f"  搜索总量: {idx_stats['total_searches']}")
     print(f"  缓存命中率: {idx_stats['cache_hit_rate']}%")
 
+    # 实验模块标记
+    try:
+        from core.state import state
+        exp_modules = []
+        checks = [
+            ("entropy", "熵引擎"),
+            ("immune", "免疫系统"),
+            ("adaptive_system", "自适应系统"),
+            ("evolution", "自动进化"),
+            ("value", "价值层"),
+        ]
+        for key, name in checks:
+            cfg = state.config.get(key, {})
+            if isinstance(cfg, dict) and cfg.get("enabled", False):
+                exp_modules.append(name)
+        if exp_modules:
+            print(f"  {Color.YELLOW}实验模块: {', '.join(exp_modules)}{Color.RESET}")
+    except Exception:
+        pass
 
-def cmd_stats(index, storage):
+
+def cmd_stats(args, storage, index):
     """详细统计。"""
     idx_stats = index.stats()
     stg_stats = storage.stats()
+
+    # 最终统计
+    stats = {
+        "version": "3.0",
+        "engine": "1.4.1",
+        "total_rules": stg_stats.get("active_rules", stg_stats.get("total_rules", 0)),
+        "categories": stg_stats.get("categories", []),
+        "category_count": len(stg_stats.get("categories", [])),
+        "index_version": idx_stats["index_version"],
+        "hot_cache_size": idx_stats["hot_cache_size"],
+        "cold_count": idx_stats["cold_count"],
+        "total_searches": idx_stats["total_searches"],
+        "cache_hit_rate": idx_stats["cache_hit_rate"],
+        "avg_latency_ms": idx_stats.get("avg_latency_ms", 0.0),
+        "tag_count": idx_stats["tag_count"],
+        "storage_backend": stg_stats.get("backend", "sqlite"),
+    }
+
+    if getattr(args, "format", "text") == "json":
+        import json
+        output = json.dumps(stats, ensure_ascii=False, indent=2)
+        if getattr(args, "output", None):
+            with open(args.output, "w", encoding="utf-8") as f:
+                f.write(output)
+            print(f"统计已写入: {args.output}")
+        else:
+            print(output)
+        return
 
     print(f"{Color.BOLD}存储统计{Color.RESET}")
     print(f"{'=' * 40}")
@@ -463,7 +512,10 @@ def main():
     sub.add_parser("health", help="健康检查")
 
     # stats
-    sub.add_parser("stats", help="系统统计")
+    p_stats = sub.add_parser("stats", help="系统统计")
+    p_stats.add_argument("--format", choices=["text", "json"], default="text",
+                         help="输出格式")
+    p_stats.add_argument("--output", help="输出到文件（JSON）")
 
     # config
     sub.add_parser("config", help="查看配置")
@@ -521,7 +573,7 @@ def main():
             "dedup": lambda: cmd_dedup(args, storage, index, logger),
             "warmup": lambda: cmd_warmup(args, index),
             "health": lambda: cmd_health(index, storage),
-            "stats": lambda: cmd_stats(index, storage),
+            "stats": lambda: cmd_stats(args, storage, index),
         }
         commands[args.command]()
         return

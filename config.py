@@ -60,6 +60,8 @@ DEFAULTS: Dict[str, Dict[str, Any]] = {
     },
     "cache": {
         "max_size_mb": 512,
+        "max_hot_size": 500,
+        "ttl_sec": 3600,
         "preheat_on_start": True,
     },
     "security": {

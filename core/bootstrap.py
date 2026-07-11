@@ -97,6 +97,8 @@ def bootstrap(config: dict = None, base_dir: str = None, data_dir: str = None,
     state.index = EverythingStyleIndex()
     state.index.HOT_THRESHOLD = state.config["index"]["hot_threshold"]
     state.index.COLD_DAYS = state.config["index"]["cold_days"]
+    state.index.MAX_HOT_SIZE = state.config.get("cache", {}).get("max_hot_size", 500)
+    state.index.CACHE_TTL_SEC = state.config.get("cache", {}).get("ttl_sec", 3600)
 
     # 启动时重建索引
     rules = state.storage.list()
@@ -115,6 +117,28 @@ def bootstrap(config: dict = None, base_dir: str = None, data_dir: str = None,
     if state.config["cache"]["preheat_on_start"] and rules:
         result = state.index.warmup()
         state.logger.info("cache", f"预热完成，加载 {result['loaded']} 条", **result)
+
+    # ── 实验模块标记与告警 ──────────────────────────────
+    EXPERIMENTAL_MODULES = {
+        "entropy": ("熵引擎", "Phase 1"),
+        "immune": ("免疫系统", "Phase 2"),
+        "adaptive_system": ("自适应系统", "Phase 3"),
+        "v3.evolution": ("自动进化", "Phase B/C"),
+        "v3.ai_bridge": ("AI 桥接", "Phase C"),
+        "value": ("价值层", "v4.0"),
+    }
+    for cfg_path, (name, phase) in EXPERIMENTAL_MODULES.items():
+        parts = cfg_path.split(".")
+        enabled = state.config
+        for part in parts:
+            enabled = enabled.get(part, {}) if isinstance(enabled, dict) else {}
+        is_enabled = enabled if isinstance(enabled, bool) else enabled.get("enabled", False)
+        if is_enabled:
+            state.logger.warn(
+                "bootstrap",
+                f"[实验模块] {name} ({phase}) 已启用 — 此模块仍处于实验阶段，"
+                f"可能影响稳定性"
+            )
 
     # ── v3.0 扩展模块（核心存储和索引就绪后）─────────────
     _init_v3_modules()

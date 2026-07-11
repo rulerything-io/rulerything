@@ -43,6 +43,9 @@ class EverythingStyleIndex:
     HOT_THRESHOLD = 10         # hit_count ≥ 此值进入热缓存
     COLD_DAYS = 30             # 超过此天数未访问进入冷区
     HOT_UPDATE_INTERVAL = 10   # 每 N 次命中触发缓存刷新
+    MAX_HOT_SIZE = 500         # 热缓存最大条目数（可被 config 覆盖）
+    MAX_CACHE_MB = 512         # 缓存最大估算字节数（MB）
+    CACHE_TTL_SEC = 3600       # 缓存 TTL（秒，0=不限制）
 
     def __init__(self, rules: Optional[List[Rule]] = None):
         self._rules: Dict[str, Rule] = {}           # id → Rule（索引持有引用）
@@ -65,6 +68,7 @@ class EverythingStyleIndex:
         self._estimated_cache_bytes: int = 0         # 热缓存字节估算
         self.total_search_count: int = 0
         self.cache_hit_count: int = 0
+        self._eviction_count: int = 0                # 缓存驱逐次数
         self._cumulative_latency_ms: float = 0.0     # 累计搜索延迟（用于 avg_latency_ms）
         self._latency_sample_count: int = 0          # record_latency 调用次数
 
@@ -251,19 +255,32 @@ class EverythingStyleIndex:
 
     def _refresh_hot_cache(self):
         """增量刷新热缓存，超过上限时驱逐低热度条目。"""
+        now = datetime.now()
         for rule in self._rules.values():
             if (rule.hit_count >= self.HOT_THRESHOLD
                     and rule.id not in self.hot_ids):
                 self.hot_ids.add(rule.id)
                 self.hot_cache[rule.id] = rule
 
+        # TTL 驱逐
+        if self.CACHE_TTL_SEC > 0:
+            stale_ids = []
+            for rid, rule in self.hot_cache.items():
+                if rule.last_hit and (now - rule.last_hit).total_seconds() > self.CACHE_TTL_SEC:
+                    stale_ids.append(rid)
+            for rid in stale_ids:
+                self.hot_ids.discard(rid)
+                del self.hot_cache[rid]
+                self._eviction_count += 1
+
         # 驱逐：超过上限时移除最低命中率的条目
-        MAX_HOT = 500
-        if len(self.hot_cache) > MAX_HOT:
+        if len(self.hot_cache) > self.MAX_HOT_SIZE:
             sorted_hot = sorted(self.hot_cache.items(), key=lambda x: x[1].hit_count)
-            for rule_id, _ in sorted_hot[:len(self.hot_cache) - MAX_HOT]:
+            evict_count = len(self.hot_cache) - self.MAX_HOT_SIZE
+            for rule_id, _ in sorted_hot[:evict_count]:
                 self.hot_ids.discard(rule_id)
                 del self.hot_cache[rule_id]
+                self._eviction_count += 1
 
     # ── 搜索方法 ───────────────────────────────────────
 
@@ -609,10 +626,19 @@ class EverythingStyleIndex:
     def _from_cache_or_store(self, rule_id: str) -> Optional[Rule]:
         """优先从热缓存返回，否则从全量规则返回。
 
-        TODO: 支持 cache.max_size_mb 配置，实现精确字节数计数和驱逐。
+        热缓存条目超过 TTL 时自动降级。
         """
         if rule_id in self.hot_cache:
-            return self.hot_cache[rule_id]
+            rule = self.hot_cache[rule_id]
+            if self.CACHE_TTL_SEC > 0 and rule.last_hit:
+                age = (datetime.now() - rule.last_hit).total_seconds()
+                if age > self.CACHE_TTL_SEC:
+                    # 过期，从热缓存驱逐
+                    self.hot_ids.discard(rule_id)
+                    del self.hot_cache[rule_id]
+                    self._eviction_count += 1
+                    return self._rules.get(rule_id)
+            return rule
         return self._rules.get(rule_id)
 
     # ── 预热 ───────────────────────────────────────────
@@ -666,6 +692,9 @@ class EverythingStyleIndex:
                 round(self.cache_hit_count / max(1, self.total_search_count) * 100, 1)
                 if self.total_search_count > 0 else 0.0
             ),
+            "cache_eviction_count": self._eviction_count,
+            "cache_max_size": self.MAX_HOT_SIZE,
+            "cache_ttl_sec": self.CACHE_TTL_SEC,
             "avg_latency_ms": (
                 round(self._cumulative_latency_ms / self._latency_sample_count, 2)
                 if self._latency_sample_count > 0 else 0.0
