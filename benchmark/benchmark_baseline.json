@@ -1,0 +1,170 @@
+{
+  "metrics": {
+    "total_queries": 105,
+    "top1_category_match": 0.4667,
+    "category_recall@5": 0.6571,
+    "no_result_rate": 0.0,
+    "avg_latency_ms": 7.74,
+    "p95_latency_ms": 31.0,
+    "has_ground_truth": false,
+    "recall_at_5": null,
+    "mrr": null
+  },
+  "per_category": {
+    "security": {
+      "total_queries": 20,
+      "top1_category_match": 0.6,
+      "category_recall@5": 0.95,
+      "no_result_rate": 0.0,
+      "avg_latency_ms": 8.6,
+      "p95_latency_ms": 32.0,
+      "has_ground_truth": false,
+      "recall_at_5": null,
+      "mrr": null
+    },
+    "python": {
+      "total_queries": 15,
+      "top1_category_match": 0.6667,
+      "category_recall@5": 0.8,
+      "no_result_rate": 0.0,
+      "avg_latency_ms": 9.4,
+      "p95_latency_ms": 46.0,
+      "has_ground_truth": false,
+      "recall_at_5": null,
+      "mrr": null
+    },
+    "javascript": {
+      "total_queries": 6,
+      "top1_category_match": 0.0,
+      "category_recall@5": 0.0,
+      "no_result_rate": 0.0,
+      "avg_latency_ms": 5.17,
+      "p95_latency_ms": 16.0,
+      "has_ground_truth": false,
+      "recall_at_5": null,
+      "mrr": null
+    },
+    "typescript": {
+      "total_queries": 3,
+      "top1_category_match": 1.0,
+      "category_recall@5": 1.0,
+      "no_result_rate": 0.0,
+      "avg_latency_ms": 0.0,
+      "p95_latency_ms": 0.0,
+      "has_ground_truth": false,
+      "recall_at_5": null,
+      "mrr": null
+    },
+    "react": {
+      "total_queries": 1,
+      "top1_category_match": 1.0,
+      "category_recall@5": 1.0,
+      "no_result_rate": 0.0,
+      "avg_latency_ms": 16.0,
+      "p95_latency_ms": 16.0,
+      "has_ground_truth": false,
+      "recall_at_5": null,
+      "mrr": null
+    },
+    "go": {
+      "total_queries": 5,
+      "top1_category_match": 0.2,
+      "category_recall@5": 0.4,
+      "no_result_rate": 0.0,
+      "avg_latency_ms": 3.0,
+      "p95_latency_ms": 15.0,
+      "has_ground_truth": false,
+      "recall_at_5": null,
+      "mrr": null
+    },
+    "api": {
+      "total_queries": 12,
+      "top1_category_match": 0.5833,
+      "category_recall@5": 0.8333,
+      "no_result_rate": 0.0,
+      "avg_latency_ms": 3.92,
+      "p95_latency_ms": 16.0,
+      "has_ground_truth": false,
+      "recall_at_5": null,
+      "mrr": null
+    },
+    "database": {
+      "total_queries": 8,
+      "top1_category_match": 0.625,
+      "category_recall@5": 0.75,
+      "no_result_rate": 0.0,
+      "avg_latency_ms": 5.88,
+      "p95_latency_ms": 16.0,
+      "has_ground_truth": false,
+      "recall_at_5": null,
+      "mrr": null
+    },
+    "pattern": {
+      "total_queries": 12,
+      "top1_category_match": 0.5833,
+      "category_recall@5": 0.6667,
+      "no_result_rate": 0.0,
+      "avg_latency_ms": 6.5,
+      "p95_latency_ms": 31.0,
+      "has_ground_truth": false,
+      "recall_at_5": null,
+      "mrr": null
+    },
+    "general": {
+      "total_queries": 11,
+      "top1_category_match": 0.0,
+      "category_recall@5": 0.0909,
+      "no_result_rate": 0.0,
+      "avg_latency_ms": 8.64,
+      "p95_latency_ms": 47.0,
+      "has_ground_truth": false,
+      "recall_at_5": null,
+      "mrr": null
+    },
+    "performance": {
+      "total_queries": 5,
+      "top1_category_match": 0.2,
+      "category_recall@5": 0.8,
+      "no_result_rate": 0.0,
+      "avg_latency_ms": 12.4,
+      "p95_latency_ms": 31.0,
+      "has_ground_truth": false,
+      "recall_at_5": null,
+      "mrr": null
+    },
+    "devops": {
+      "total_queries": 5,
+      "top1_category_match": 0.2,
+      "category_recall@5": 0.2,
+      "no_result_rate": 0.0,
+      "avg_latency_ms": 9.4,
+      "p95_latency_ms": 16.0,
+      "has_ground_truth": false,
+      "recall_at_5": null,
+      "mrr": null
+    },
+    "philosophy": {
+      "total_queries": 1,
+      "top1_category_match": 1.0,
+      "category_recall@5": 1.0,
+      "no_result_rate": 0.0,
+      "avg_latency_ms": 47.0,
+      "p95_latency_ms": 47.0,
+      "has_ground_truth": false,
+      "recall_at_5": null,
+      "mrr": null
+    },
+    "process": {
+      "total_queries": 1,
+      "top1_category_match": 0.0,
+      "category_recall@5": 1.0,
+      "no_result_rate": 0.0,
+      "avg_latency_ms": 15.0,
+      "p95_latency_ms": 15.0,
+      "has_ground_truth": false,
+      "recall_at_5": null,
+      "mrr": null
+    }
+  },
+  "timestamp": "2026-07-11T19:57:11"
+}

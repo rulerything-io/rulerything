@@ -109,3 +109,77 @@ class TestAuthEdgeCases:
         with TestClient(app) as c:
             resp = c.post("/test-write", headers={"Authorization": "NotBearer foo"})
         assert resp.status_code == 401
+
+
+# ── 公网绑定安全校验测试 ──────────────────────────────────
+
+class TestValidateBindConfig:
+    """测试 validate_bind_config 函数。"""
+
+    def test_localhost_without_auth_allowed(self):
+        """127.0.0.1 无认证应该通过。"""
+        from core.auth import validate_bind_config
+        config = {
+            "server": {"host": "127.0.0.1"},
+            "security": {"api_key_required": False, "allow_insecure_public_bind": False},
+        }
+        # 不应该抛出 SystemExit
+        validate_bind_config(config)
+
+    def test_localhost_with_auth_allowed(self):
+        """localhost 开启认证也应该通过。"""
+        from core.auth import validate_bind_config
+        config = {
+            "server": {"host": "localhost"},
+            "security": {"api_key_required": True, "allow_insecure_public_bind": False},
+        }
+        validate_bind_config(config)
+
+    def test_public_bind_with_auth_allowed(self):
+        """0.0.0.0 开启认证应该通过。"""
+        from core.auth import validate_bind_config
+        config = {
+            "server": {"host": "0.0.0.0"},
+            "security": {"api_key_required": True, "allow_insecure_public_bind": False},
+        }
+        validate_bind_config(config)
+
+    def test_public_bind_without_auth_rejected(self):
+        """0.0.0.0 无认证应该被拒绝。"""
+        from core.auth import validate_bind_config
+        config = {
+            "server": {"host": "0.0.0.0"},
+            "security": {"api_key_required": False, "allow_insecure_public_bind": False},
+        }
+        with pytest.raises(SystemExit):
+            validate_bind_config(config)
+
+    def test_public_bind_without_auth_but_explicitly_allowed(self):
+        """0.0.0.0 无认证但显式允许应该只警告不退出。"""
+        from core.auth import validate_bind_config
+        config = {
+            "server": {"host": "0.0.0.0"},
+            "security": {"api_key_required": False, "allow_insecure_public_bind": True},
+        }
+        # 不应该抛出 SystemExit
+        validate_bind_config(config)
+
+    def test_ipv6_public_bind_without_auth_rejected(self):
+        """IPv6 全局地址 :: 无认证应该被拒绝。"""
+        from core.auth import validate_bind_config
+        config = {
+            "server": {"host": "::"},
+            "security": {"api_key_required": False, "allow_insecure_public_bind": False},
+        }
+        with pytest.raises(SystemExit):
+            validate_bind_config(config)
+
+    def test_subnet_public_bind_without_auth_rejected(self):
+        """0.x 开头地址无认证应该被拒绝。"""
+        from core.auth import validate_bind_config
+        config = {
+            "server": {"host": "0.0.0.1"},
+            "security": {"api_key_required": False, "allow_insecure_public_bind": False},
+        }
+        with pytest.raises(SystemExit):
+            validate_bind_config(config)

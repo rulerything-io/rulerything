@@ -1,0 +1,549 @@
+# Rulerything Search Evaluation Cases
+#
+# This file defines standard queries for evaluating search quality.
+# Each query specifies:
+#   - id:         Unique identifier
+#   - query:      The search query string
+#   - category:   Expected rule category
+#   - lang:       Language hint (zh/en/ja/...)
+#   - expected_rule_ids:  Rules that MUST appear in top results (optional)
+#   - relevant_rule_ids:  Rules that SHOULD appear in top results (optional)
+#
+# New queries should be added without expected_rule_ids initially;
+# run evaluate_search.py --update-baseline to capture the first baseline.
+
+# ── Security (20 queries) ──
+- id: security_sql_injection
+  query: SQL注入防护
+  category: security
+  lang: zh
+
+- id: security_xss
+  query: XSS跨站脚本防御
+  category: security
+  lang: zh
+
+- id: security_csrf
+  query: CSRF protection
+  category: security
+  lang: en
+
+- id: security_authentication
+  query: 用户认证最佳实践
+  category: security
+  lang: zh
+
+- id: security_authorization
+  query: authorization access control
+  category: security
+  lang: en
+
+- id: security_input_validation
+  query: 输入验证安全
+  category: security
+  lang: zh
+
+- id: security_encryption
+  query: encryption data security
+  category: security
+  lang: en
+
+- id: security_password
+  query: 密码存储安全
+  category: security
+  lang: zh
+
+- id: security_secure_coding
+  query: secure coding practices
+  category: security
+  lang: en
+
+- id: security_jwt
+  query: JWT token security
+  category: security
+  lang: en
+
+- id: security_oauth
+  query: OAuth2 authentication
+  category: security
+  lang: en
+
+- id: security_cors
+  query: CORS跨域安全
+  category: security
+  lang: zh
+
+- id: security_dos
+  query: DoS攻击防护
+  category: security
+  lang: zh
+
+- id: security_logging
+  query: security logging audit
+  category: security
+  lang: en
+
+- id: security_protocol
+  query: HTTPS TLS 安全协议
+  category: security
+  lang: zh
+
+- id: security_api_key
+  query: API key management security
+  category: security
+  lang: en
+
+- id: security_rate_limit
+  query: rate limiting throttling
+  category: security
+  lang: en
+
+- id: security_container
+  query: container security hardening
+  category: security
+  lang: en
+
+- id: security_dependency
+  query: dependency supply chain security
+  category: security
+  lang: en
+
+- id: security_session
+  query: session management security
+  category: security
+  lang: en
+
+# ── Python (15 queries) ──
+- id: python_async
+  query: Python异步编程
+  category: python
+  lang: zh
+
+- id: python_fastapi
+  query: FastAPI async development
+  category: python
+  lang: en
+
+- id: python_testing
+  query: pytest单元测试
+  category: python
+  lang: zh
+
+- id: python_performance
+  query: Python性能优化
+  category: python
+  lang: zh
+
+- id: python_type_hints
+  query: Python type hints annotations
+  category: python
+  lang: en
+
+- id: python_error_handling
+  query: Python异常处理最佳实践
+  category: python
+  lang: zh
+
+- id: python_decorator
+  query: Python装饰器设计模式
+  category: python
+  lang: zh
+
+- id: python_django
+  query: Django web framework
+  category: python
+  lang: en
+
+- id: python_concurrency
+  query: Python 并发多线程
+  category: python
+  lang: zh
+
+- id: python_logging
+  query: Python logging best practices
+  category: python
+  lang: en
+
+- id: python_class_design
+  query: Python OOP class design
+  category: python
+  lang: en
+
+- id: python_context_manager
+  query: Python context manager with
+  category: python
+  lang: en
+
+- id: python_data_class
+  query: Python dataclass pydantic
+  category: python
+  lang: en
+
+- id: python_debugging
+  query: Python调试技巧
+  category: python
+  lang: zh
+
+- id: python_generator
+  query: Python generator yield
+  category: python
+  lang: en
+
+# ── JavaScript/TypeScript (10 queries) ──
+- id: js_async
+  query: JavaScript async await
+  category: javascript
+  lang: en
+
+- id: js_promise
+  query: JavaScript Promise pattern
+  category: javascript
+  lang: en
+
+- id: ts_types
+  query: TypeScript type utility
+  category: typescript
+  lang: en
+
+- id: js_react_hooks
+  query: React Hooks最佳实践
+  category: react
+  lang: zh
+
+- id: js_error_handling
+  query: JavaScript异常处理
+  category: javascript
+  lang: zh
+
+- id: ts_generics
+  query: TypeScript generic types
+  category: typescript
+  lang: en
+
+- id: js_performance
+  query: JavaScript性能优化
+  category: javascript
+  lang: zh
+
+- id: js_module
+  query: JavaScript ES module import
+  category: javascript
+  lang: en
+
+- id: js_event_loop
+  query: JavaScript event loop
+  category: javascript
+  lang: en
+
+- id: ts_decorator
+  query: TypeScript decorators
+  category: typescript
+  lang: en
+
+# ── Go (5 queries) ──
+- id: go_concurrency
+  query: Go goroutine channel
+  category: go
+  lang: en
+
+- id: go_error
+  query: Go error handling
+  category: go
+  lang: en
+
+- id: go_testing
+  query: Go testing benchmark
+  category: go
+  lang: en
+
+- id: go_interface
+  query: Go interface design
+  category: go
+  lang: en
+
+- id: go_performance
+  query: Go性能优化pprof
+  category: go
+  lang: zh
+
+# ── API / REST (12 queries) ──
+- id: api_rest
+  query: RESTful API设计
+  category: api
+  lang: zh
+
+- id: api_versioning
+  query: API versioning strategy
+  category: api
+  lang: en
+
+- id: api_openapi
+  query: OpenAPI documentation
+  category: api
+  lang: en
+
+- id: api_graphql
+  query: GraphQL schema design
+  category: api
+  lang: en
+
+- id: api_websocket
+  query: WebSocket realtime
+  category: api
+  lang: en
+
+- id: api_pagination
+  query: API分页设计
+  category: api
+  lang: zh
+
+- id: api_error_format
+  query: API error response format
+  category: api
+  lang: en
+
+- id: api_rate_limiting
+  query: API rate limiting
+  category: api
+  lang: en
+
+- id: api_http_methods
+  query: HTTP method REST规范
+  category: api
+  lang: zh
+
+- id: api_json_design
+  query: JSON API design
+  category: api
+  lang: en
+
+- id: api_collection
+  query: API collection resource
+  category: api
+  lang: en
+
+- id: api_cors_design
+  query: API CORS configuration
+  category: api
+  lang: en
+
+# ── Database (8 queries) ──
+- id: db_query_optimization
+  query: SQL查询优化
+  category: database
+  lang: zh
+
+- id: db_index
+  query: database index optimization
+  category: database
+  lang: en
+
+- id: db_transaction
+  query: 数据库事务ACID
+  category: database
+  lang: zh
+
+- id: db_connection_pool
+  query: database connection pool
+  category: database
+  lang: en
+
+- id: db_migration
+  query: database migration schema
+  category: database
+  lang: en
+
+- id: db_nosql
+  query: NoSQL MongoDB Redis
+  category: database
+  lang: en
+
+- id: db_orm
+  query: ORM 数据库设计
+  category: database
+  lang: zh
+
+- id: db_backup
+  query: database backup recovery
+  category: database
+  lang: en
+
+# ── Architecture & Design Patterns (12 queries) ──
+- id: pattern_microservice
+  query: 微服务架构设计
+  category: pattern
+  lang: zh
+
+- id: pattern_solid
+  query: SOLID principle
+  category: pattern
+  lang: en
+
+- id: pattern_ddd
+  query: DDD领域驱动设计
+  category: pattern
+  lang: zh
+
+- id: pattern_cqrs
+  query: CQRS event sourcing
+  category: pattern
+  lang: en
+
+- id: pattern_observer
+  query: observer pattern
+  category: pattern
+  lang: en
+
+- id: pattern_factory
+  query: factory method pattern
+  category: pattern
+  lang: en
+
+- id: pattern_strategy
+  query: strategy pattern design
+  category: pattern
+  lang: en
+
+- id: pattern_circuit_breaker
+  query: circuit breaker pattern
+  category: pattern
+  lang: en
+
+- id: pattern_repository
+  query: repository pattern
+  category: pattern
+  lang: en
+
+- id: pattern_dependency_injection
+  query: dependency injection IoC
+  category: pattern
+  lang: en
+
+- id: pattern_singleton
+  query: singleton pattern
+  category: pattern
+  lang: en
+
+- id: pattern_pubsub
+  query: publish subscribe pattern
+  category: pattern
+  lang: en
+
+# ── Testing (8 queries) ──
+- id: test_unit
+  query: 单元测试最佳实践
+  category: general
+  lang: zh
+
+- id: test_tdd
+  query: TDD test driven development
+  category: general
+  lang: en
+
+- id: test_integration
+  query: integration testing strategy
+  category: general
+  lang: en
+
+- id: test_mock
+  query: mocking stub testing
+  category: general
+  lang: en
+
+- id: test_coverage
+  query: test coverage metrics
+  category: general
+  lang: en
+
+- id: test_benchmark
+  query: benchmark performance test
+  category: general
+  lang: en
+
+- id: test_e2e
+  query: end to end testing
+  category: general
+  lang: en
+
+- id: test_ci
+  query: CI test automation
+  category: general
+  lang: en
+
+# ── Performance (5 queries) ──
+- id: perf_caching
+  query: 缓存策略性能优化
+  category: performance
+  lang: zh
+
+- id: perf_memory
+  query: memory leak profiling
+  category: performance
+  lang: en
+
+- id: perf_profiling
+  query: 性能分析profiling
+  category: performance
+  lang: zh
+
+- id: perf_load_testing
+  query: load testing benchmark
+  category: performance
+  lang: en
+
+- id: perf_cdn
+  query: CDN静态资源优化
+  category: performance
+  lang: zh
+
+# ── DevOps / CI-CD (5 queries) ──
+- id: devops_docker
+  query: Docker container best practices
+  category: devops
+  lang: en
+
+- id: devops_ci
+  query: CI/CD pipeline
+  category: devops
+  lang: en
+
+- id: devops_monitoring
+  query: 监控告警体系
+  category: devops
+  lang: zh
+
+- id: devops_k8s
+  query: Kubernetes deployment
+  category: devops
+  lang: en
+
+- id: devops_logging
+  query: 日志收集分析
+  category: devops
+  lang: zh
+
+# ── General & Philosophy (5 queries ──
+- id: general_philosophy
+  query: 编程哲学最佳实践
+  category: philosophy
+  lang: zh
+
+- id: general_code_review
+  query: code review checklist
+  category: general
+  lang: en
+
+- id: general_documentation
+  query: 技术文档写作
+  category: general
+  lang: zh
+
+- id: general_agile
+  query: agile scrum process
+  category: process
+  lang: en
+
+- id: general_refactoring
+  query: 代码重构策略
+  category: general
+  lang: zh

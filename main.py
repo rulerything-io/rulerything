@@ -19,6 +19,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from config import load_config
+from core.auth import validate_bind_config
 from core.bootstrap import abort_bootstrap, bootstrap, shutdown
 from core.state import state
 from core.version import VERSION
@@ -143,8 +144,9 @@ from core.utils import enhance_prompt  # noqa: E402,F401
 
 def run():
     """Console entry point for ``rulerything-server``."""
-    import uvicorn
-    server = load_config().get("server", {})
+    config = load_config()
+    validate_bind_config(config)
+    server = config.get("server", {})
     uvicorn.run("main:app", host=server.get("host", "127.0.0.1"),
                 port=int(server.get("port", 8001)),
                 workers=int(server.get("workers", 1)))

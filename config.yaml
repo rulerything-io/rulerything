@@ -39,7 +39,9 @@ cache:
 
 security:
   api_key_required: false
+  api_key: ""
   rate_limit_per_min: 1000
+  allow_insecure_public_bind: false
 
 # Phase 1: 熵引擎
 entropy:

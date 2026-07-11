@@ -48,6 +48,7 @@ except ImportError:
     StartupCheck = None
     HAS_V3 = False
 
+from core.auth import validate_bind_config
 from core.state import state
 from core.repository import create_repository
 
@@ -65,6 +66,7 @@ def bootstrap(config: dict = None, base_dir: str = None, data_dir: str = None,
 
     # ── 配置 ────────────────────────────────────────────
     state.config = config or load_config()
+    validate_bind_config(state.config)
     state.log_level = state.config["logging"]["level"]
     source_base = Path(base_dir or Path(__file__).resolve().parent.parent).resolve()
     state._BASE_DIR = str(source_base)

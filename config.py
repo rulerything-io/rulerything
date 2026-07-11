@@ -66,6 +66,7 @@ DEFAULTS: Dict[str, Dict[str, Any]] = {
         "api_key_required": False,
         "api_key": "",
         "rate_limit_per_min": 1000,
+        "allow_insecure_public_bind": False,
     },
 
     # v3.0 默认配置
@@ -237,6 +238,8 @@ ENV_MAP = {
     "RULES_SECURITY_API_KEY_REQUIRED": ("security", "api_key_required", bool),
     "RULES_SECURITY_API_KEY": ("security", "api_key", str),
     "RULES_SECURITY_RATE_LIMIT_PER_MIN": ("security", "rate_limit_per_min", int),
+    "RULES_SECURITY_ALLOW_INSECURE_PUBLIC_BIND": ("security", "allow_insecure_public_bind", bool),
+    "RULES_SERVER_CORS_ORIGINS": ("server", "cors_origins", str),
 }
 
 

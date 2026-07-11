@@ -330,6 +330,59 @@ def cmd_stats(index, storage):
     _print(idx_stats)
 
 
+def cmd_rules_validate(args, storage):
+    """校验规则 Schema。"""
+    from core.schema import RuleValidator, check_id_uniqueness, check_conflicts_reference_existing
+
+    rules = storage.list()
+    rules_dicts = [r.to_dict() for r in rules]
+
+    validator = RuleValidator(strict=args.strict)
+    report = validator.validate_all(rules_dicts)
+
+    # 添加 ID 唯一性检查
+    for err in check_id_uniqueness(rules_dicts):
+        report.add_error(err)
+
+    # 添加引用检查
+    for err in check_conflicts_reference_existing(rules_dicts):
+        report.add_error(err)
+
+    report.print_report(verbose=args.verbose)
+
+    if not report.passed:
+        sys.exit(1)
+
+
+def cmd_rules_migrate(args, storage):
+    """迁移规则 Schema。"""
+    from core.schema import migrate_all, estimate_schema_version
+
+    rules = storage.list()
+    rules_dicts = [r.to_dict() for r in rules]
+
+    # 统计当前版本分布
+    version_counts = {}
+    for r in rules_dicts:
+        sv = estimate_schema_version(r)
+        version_counts[sv] = version_counts.get(sv, 0) + 1
+
+    print(f"\n{Color.BOLD}Schema 版本分布:{Color.RESET}")
+    for v in sorted(version_counts.keys()):
+        print(f"  v{v}: {version_counts[v]} 条")
+    print(f"  总计: {len(rules_dicts)} 条\n")
+
+    if args.to_version == 1:
+        migrated, stats = migrate_all(rules_dicts, dry_run=args.dry_run)
+        print(f"{Color.GREEN}迁移预览:{Color.RESET}")
+        print(f"  已为 v1: {stats['already_v1']}")
+        print(f"  需迁移:  {stats['migrated']}")
+        if not args.dry_run and stats['migrated'] > 0:
+            print(f"  {Color.YELLOW}迁移完成（只影响内存表现，持久化需等待存储层支持）{Color.RESET}")
+    else:
+        print(f"{Color.YELLOW}暂不支持迁移到 v{args.to_version}{Color.RESET}")
+
+
 def cmd_config():
     """显示当前配置。"""
     config = load_config()
@@ -393,6 +446,19 @@ def main():
     p_evo_vers = p_evo_sub.add_parser("versions", help="查看规则归档版本")
     p_evo_vers.add_argument("rule_id", help="规则 ID")
 
+    # rules
+    p_rules = sub.add_parser("rules", help="规则管理")
+    p_rules_sub = p_rules.add_subparsers(dest="rules_command", help="规则子命令")
+
+    p_validate = p_rules_sub.add_parser("validate", help="校验规则 Schema")
+    p_validate.add_argument("--strict", action="store_true", help="严格模式")
+    p_validate.add_argument("--verbose", action="store_true", help="显示详细信息")
+
+    p_migrate = p_rules_sub.add_parser("migrate", help="迁移规则 Schema")
+    p_migrate.add_argument("--from", dest="from_version", type=int, default=0)
+    p_migrate.add_argument("--to", dest="to_version", type=int, default=1)
+    p_migrate.add_argument("--dry-run", action="store_true", help="仅预览")
+
     # health
     sub.add_parser("health", help="健康检查")
 
@@ -432,6 +498,16 @@ def main():
     # 快速命令（不需 storage/index）
     if args.command == "config":
         cmd_config()
+        return
+
+    # rules 子命令
+    if args.command == "rules":
+        if args.rules_command == "validate":
+            cmd_rules_validate(args, storage)
+        elif args.rules_command == "migrate":
+            cmd_rules_migrate(args, storage)
+        else:
+            print(f"{Color.YELLOW}规则子命令: validate [--strict] | migrate [--dry-run]{Color.RESET}")
         return
 
     # 快速命令（不需 evolution）
