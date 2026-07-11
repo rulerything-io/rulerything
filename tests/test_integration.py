@@ -38,7 +38,7 @@ class TestConfig:
     def test_defaults(self):
         config = load_config(path="nonexistent.yaml")
         assert config["server"]["host"] == "127.0.0.1"
-        assert config["server"]["port"] == 8000
+        assert config["server"]["port"] == 8001
         assert config["index"]["hot_threshold"] == 10
         assert config["logging"]["level"] == "INFO"
 

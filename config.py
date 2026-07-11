@@ -34,7 +34,7 @@ from typing import Any, Dict
 DEFAULTS: Dict[str, Dict[str, Any]] = {
     "server": {
         "host": "127.0.0.1",
-        "port": 8000,
+        "port": 8001,
         "workers": 1,
         "cors_origins": [],
         "rate_limit_per_min": 1000,

@@ -66,3 +66,7 @@ include = ["rulerything*", "core*", "routes*", "value*", "semantic_plugin*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+filterwarnings = [
+    "ignore::UserWarning:starlette.testclient:",
+    "ignore::UserWarning:fastapi.testclient:",
+]
